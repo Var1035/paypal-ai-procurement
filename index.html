@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" class="light" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PayPal Agentic AI Procurement Hub</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem("site_theme_mode") || "light";
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+            document.documentElement.classList.remove("light");
+            document.documentElement.setAttribute("data-theme", "dark");
+            document.documentElement.style.colorScheme = "dark";
+          } else {
+            document.documentElement.classList.add("light");
+            document.documentElement.classList.remove("dark");
+            document.documentElement.setAttribute("data-theme", "light");
+            document.documentElement.style.colorScheme = "light";
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

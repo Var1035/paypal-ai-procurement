@@ -1,0 +1,460 @@
+AGENTMARKET — PROJECT ABSTRACT AND BUILD SPECIFICATION
+PayPal AI Hackathon | Primary implementation brief for Antigravity
+Version: 1.0
+Date: October 12, 2026
+
+============================================================
+1. PROJECT ABSTRACT
+============================================================
+
+AgentMarket is an AI-powered B2B procurement marketplace where a buyer's AI agent discovers suitable suppliers, requests quotations, negotiates within buyer-defined limits, and prepares a purchase for human approval. Each supplier is represented by its own business-controlled agent, which uses that supplier's catalog, stock, pricing policy, delivery capabilities, and negotiation limits. The platform connects these agents through a controlled orchestration backend rather than pretending that every business on the internet is automatically discoverable.
+
+The core idea is to make business purchasing faster and more transparent while keeping people in control of consequential decisions. A buyer describes a need in natural language—for example, “I need 100 school desks, with durable material, delivered within seven days, within my budget.” The buyer agent converts the request into structured requirements, finds eligible suppliers, and explains its shortlist. Only after the buyer approves contact does the system request quotations and allow bounded negotiation. A seller reviews and approves the final quotation, and the buyer then reviews the exact terms before paying through PayPal. The server verifies the payment result before marking an order as paid.
+
+FalkorDB is a central reasoning component, not merely a visualization. It stores relationships among businesses, products, quotations, orders, deliveries, and relevant historical transaction evidence. Graph queries can identify comparable previous purchases, repeat supplier relationships, delivery outcomes, and relevant price/quantity patterns. The application uses this evidence to explain supplier rankings and suggest negotiation targets. Historical prices are evidence, not guarantees: the system must account for product specifications, quantity, date, shipping, warranty, and other differences before comparing them.
+
+Supabase provides authentication and the authoritative relational records for businesses, products, agent policies, quotation versions, approvals, orders, payment references, and delivery updates. FalkorDB stores relationship-oriented context and evidence links used for graph traversal. The backend enforces access controls and business rules. An LLM may interpret requests, summarize evidence, and propose structured negotiation messages, but deterministic server-side validation—not the LLM alone—enforces budgets, minimum specifications, price floors, stock, delivery limits, approval requirements, and payment state.
+
+For the hackathon demonstration, AgentMarket will include a buyer account and at least three simulated but independently functioning supplier agents with different catalogs, pricing, stock, delivery capabilities, and negotiation policies. This controlled environment makes the workflow reproducible and demonstrates real agent behavior without claiming to have a global live supplier network. PayPal Sandbox will demonstrate the checkout flow. Supplier quotations, historical records, and fulfillment updates must be clearly labelled as demo/simulated data where applicable.
+
+The intended outcome is a working end-to-end procurement journey that combines agentic AI, meaningful graph-based reasoning, auditable negotiation, human approvals, and a verified PayPal Sandbox payment flow.
+
+============================================================
+2. PRODUCT GOAL
+============================================================
+
+Build a functional, polished B2B procurement SaaS product that demonstrates:
+
+1. A buyer can describe a procurement request in natural language.
+2. The buyer agent converts it to validated structured requirements.
+3. The platform searches a supplier registry and ranks eligible suppliers.
+4. FalkorDB graph evidence materially affects ranking and negotiation suggestions.
+5. The buyer explicitly approves which suppliers may be contacted.
+6. Supplier agents return quotes and can respond to bounded counteroffers.
+7. The seller human approves the final quotation.
+8. The buyer human approves the exact final terms.
+9. The buyer completes PayPal Sandbox checkout.
+10. The backend verifies payment before changing the order to paid.
+11. The system records the decision trail and shows order/fulfillment status.
+
+This must be a real full-stack application. Do not build only static screens or fake button interactions.
+
+============================================================
+3. PRIMARY USER JOURNEY
+============================================================
+
+Example request:
+“I need 100 school desks for my school. Each desk must meet the selected material and quality requirements, arrive within seven days, and stay within my stated budget.”
+
+Step 1 — Request creation
+- The buyer enters the request in a chat-style procurement interface.
+- The AI extracts quantity, product category, specifications, budget, destination, delivery deadline, warranty, and other requirements.
+- Missing critical details are requested from the buyer.
+- The backend validates and stores the structured request.
+
+Step 2 — Supplier discovery
+- Search the registered supplier catalog in Supabase.
+- Exclude suppliers that fail hard constraints such as category, stock, mandatory specifications, or delivery deadline.
+- Use FalkorDB relationships and relevant historical evidence to rank eligible suppliers.
+- Display the reasons behind the ranking, the source of evidence, and any uncertainty.
+- Do not expose one supplier's confidential records to another supplier or unauthorized buyer.
+
+Step 3 — Buyer permission to contact
+- Show the proposed supplier shortlist and a concise comparison.
+- The buyer must explicitly click a contact/request-quotation action before outreach or negotiation begins.
+- Record the approval and the suppliers covered by it.
+
+Step 4 — Agent-to-agent quotation and negotiation
+- The buyer agent sends a structured RFQ to selected supplier agents through internal backend APIs.
+- Each supplier agent evaluates the request using its own catalog, available stock, pricing policy, minimum acceptable price, delivery constraints, and negotiation rules.
+- Supplier agents return structured quotations and may counteroffer.
+- The buyer agent can use relevant graph evidence to propose a counteroffer, but it must not invent evidence or treat historical prices as guaranteed current prices.
+- Limit negotiation to a configurable small number of rounds, such as three, to control cost and prevent endless loops.
+- Validate every offer on the server against quantity, specifications, inventory, delivery, budget, and policy constraints.
+- Clearly record each offer, counteroffer, timestamp, decision, and reason.
+
+Step 5 — Seller approval
+- Generate a versioned quotation showing supplier, product/specification, quantity, unit price, total, shipping/taxes if applicable, warranty, delivery estimate, expiry, and terms.
+- Notify the seller through an in-app approval task. Email notification may be added, but email replies alone must not be treated as authenticated approval.
+- The seller must approve or reject the exact quotation version.
+- Any change to the quotation after approval creates a new version and requires approval again.
+
+Step 6 — Buyer approval and payment
+- Show the buyer the exact approved quotation and all commercial terms.
+- The buyer explicitly approves the terms and chooses to pay.
+- The backend creates a PayPal Sandbox order using server-side credentials.
+- The frontend redirects to or renders the supported PayPal checkout experience.
+- After buyer approval, the backend captures the order where required and verifies the result through PayPal's server response and/or webhook.
+- Never mark an order paid solely because the browser says payment succeeded.
+- Store PayPal order/capture identifiers, amount, currency, and verified status.
+- Do not collect or store raw card data.
+
+Step 7 — Order and fulfillment
+- Create the order from the approved quotation and verified payment state.
+- Notify the seller in the app that the order has been paid/confirmed.
+- Display fulfillment states such as Confirmed, Preparing, Dispatched, In Transit, Delivered, and Cancelled where appropriate.
+- For the hackathon demo, tracking events may be simulated and must be labelled as demo data.
+- Keep payment status and fulfillment status separate.
+
+============================================================
+4. TECHNOLOGY STACK
+============================================================
+
+Preferred stack:
+- Frontend: React + TypeScript + Vite.
+- UI: Tailwind CSS and a consistent accessible component system.
+- Backend: Node.js + TypeScript + Express (or another clearly structured TypeScript API framework).
+- Relational database and authentication: Supabase PostgreSQL + Supabase Auth.
+- Authorization: Supabase Row Level Security (RLS), plus backend authorization checks.
+- Graph database: FalkorDB, queried by the backend using supported FalkorDB/RedisGraph-compatible commands and the actual deployed version's documentation.
+- LLM: Gemini or another configurable model that supports structured output/tool calling. Keep provider integration behind a service interface so the model can be changed.
+- Payments: PayPal Sandbox Orders/Checkout APIs with server-side order creation, capture/verification, and webhook handling.
+- Validation: a schema validation library such as Zod for request, agent output, quotation, and payment data.
+- Testing: unit tests for policy validation and graph/agent services; integration tests for the purchase workflow.
+
+Use environment variables for all credentials. Include a complete .env.example with placeholders only. Never commit real API keys, service-role keys, PayPal secrets, or database passwords.
+
+============================================================
+5. ARCHITECTURE AND RESPONSIBILITIES
+============================================================
+
+A. React frontend
+- Buyer dashboard and procurement request form/chat.
+- Supplier directory and supplier comparison.
+- Agent activity/negotiation timeline.
+- Quotation detail and version history.
+- Seller approval queue.
+- Buyer final approval and PayPal Sandbox checkout.
+- Orders and fulfillment status.
+- Graph evidence/explanation panel showing why a supplier was recommended.
+- Clear loading, empty, error, success, and permission-denied states.
+- Responsive layout and accessible controls.
+
+B. Backend API and orchestration
+- Authentication and business authorization.
+- Supplier registry and agent capability lookup.
+- Procurement request parsing and validation.
+- Supplier filtering/ranking orchestration.
+- FalkorDB graph query service.
+- LLM provider adapter and structured output validation.
+- Buyer/supplier agent orchestration and bounded negotiation loop.
+- Deterministic policy validator.
+- Versioned quotation and approval workflow.
+- PayPal order creation, capture, verification, and webhook processing.
+- Audit/event log and notifications.
+- No secrets or privileged logic in the browser.
+
+C. Supabase (authoritative business records)
+Use relational tables for records that need transactional consistency and access control. Suggested entities:
+- profiles
+- businesses
+- business_members
+- supplier_products
+- supplier_inventory
+- agent_configs
+- procurement_requests
+- supplier_invitations_or_contact_approvals
+- quotations
+- quotation_versions
+- negotiation_messages
+- seller_approvals
+- buyer_approvals
+- orders
+- payments
+- fulfillment_events
+- audit_events
+
+The exact table design may be refined, but keep ownership, foreign keys, timestamps, status enums, and auditability clear. Use migrations and document how to apply them. Do not rely on frontend-only filtering for tenant isolation. Apply RLS policies and backend checks.
+
+D. FalkorDB (relationship and historical evidence)
+Create a graph model with stable identifiers that map to Supabase record IDs. Suggested node types:
+- Business
+- Product
+- ProcurementRequest
+- Quotation
+- Order
+- Delivery
+- Payment
+- SupplierAgent
+
+Suggested relationships:
+- (Business)-[:OFFERS]->(Product)
+- (Business)-[:OPERATES_AGENT]->(SupplierAgent)
+- (ProcurementRequest)-[:MATCHED_WITH]->(Business)
+- (ProcurementRequest)-[:RECEIVED_QUOTE]->(Quotation)
+- (Quotation)-[:OFFERED_BY]->(Business)
+- (Order)-[:PLACED_BY]->(Business)
+- (Order)-[:SOLD_BY]->(Business)
+- (Order)-[:CONTAINS]->(Product)
+- (Order)-[:BASED_ON]->(Quotation)
+- (Order)-[:HAS_DELIVERY]->(Delivery)
+- (Order)-[:HAS_PAYMENT]->(Payment)
+- (Business)-[:HAS_HISTORY_WITH]->(Business) where justified by recorded transactions
+
+Use properties that are actually supported and queryable in the selected FalkorDB version. Avoid storing secrets or unnecessary sensitive information in the graph. Store only the data needed for graph reasoning, and use stable IDs to retrieve authorized details from Supabase.
+
+Graph reasoning examples:
+- Find prior orders for comparable product specifications and quantities.
+- Find supplier delivery performance from recorded fulfillment events.
+- Find repeat supplier relationships and product/category experience.
+- Find historical price-per-unit ranges after accounting for comparability.
+- Explain why one supplier ranks higher or why a counteroffer is reasonable.
+- Identify evidence gaps when there is not enough history.
+
+FalkorDB must be genuinely queried by backend business logic. At least one graph query must affect supplier ranking, recommendation explanation, or negotiation strategy. Do not create a graph only for screenshots. Do not claim graph-based intelligence if the graph result does not influence the output.
+
+E. LLM/agent service
+- Treat the LLM as a reasoning and language component, not the authority for business rules.
+- Use structured JSON outputs with schemas.
+- Validate every model response and reject malformed or unsafe output.
+- Provide the model only with the data it is authorized to use.
+- Keep prompts, model selection, token limits, and error handling in server-side configuration.
+- Include a deterministic fallback when the LLM is unavailable.
+- Never let an LLM directly mark payment as successful, approve a quotation, modify inventory without validation, or bypass access controls.
+
+F. PayPal integration
+- Use Sandbox credentials and the supported PayPal Orders/Checkout API flow.
+- Create orders server-side using the exact buyer-approved quotation amount and currency.
+- Verify order/capture IDs, amount, currency, and status on the server.
+- Add webhook signature verification if webhooks are implemented.
+- Make capture and webhook processing idempotent to avoid duplicate orders or captures.
+- Keep the PayPal integration isolated in a service module.
+- Document how to configure sandbox buyer and seller accounts.
+- Do not claim production marketplace payouts or split settlement unless that specific PayPal product and merchant configuration are actually implemented and tested.
+
+============================================================
+6. AGENT DESIGN
+============================================================
+
+Buyer agent responsibilities:
+- Parse a natural-language procurement request into a structured object.
+- Ask for missing critical requirements.
+- Request supplier discovery and compare candidates.
+- Explain recommendations with traceable evidence.
+- Draft RFQs and bounded counteroffers.
+- Respect the buyer's budget, required specifications, delivery deadline, and approval settings.
+- Present exact terms for human approval.
+
+Supplier agent responsibilities:
+- Operate under one supplier business identity.
+- Read only that supplier's permitted catalog, inventory, pricing policy, and delivery capability.
+- Generate a valid initial quotation.
+- Respond to buyer-agent counteroffers according to the supplier's negotiation policy.
+- Never quote below its configured minimum price or claim unavailable stock.
+- Never disclose confidential pricing rules or another supplier's data.
+- Require seller human approval before a quotation becomes final.
+
+For the hackathon, implement at least three distinct supplier agents as separately configured modules or records, not just three hardcoded cards. Give each different products, stock, delivery options, price floors, and negotiation styles. The backend may orchestrate them in one application; independent deployment is not required for the demo.
+
+Use an agent registry containing each agent's business ID, supported categories, capability description, API/transport details, status, and authorization requirements. For the hackathon, use internal authenticated REST endpoints. A future version may support an agent-to-agent protocol such as A2A. Do not imply that a public global network of suppliers exists unless actually integrated.
+
+============================================================
+7. POLICY AND SAFETY RULES
+============================================================
+
+- Buyer must approve supplier contact before RFQ/negotiation begins.
+- Seller must approve the exact final quotation version.
+- Buyer must approve the exact final commercial terms before payment.
+- No LLM output can bypass a human approval.
+- Enforce budget, minimum specifications, stock, delivery, supplier price floor, and negotiation-round limits in deterministic backend code.
+- Validate that a quotation total equals the sum of its validated line items and applicable charges.
+- Revalidate price, stock, and quotation expiry before payment.
+- Keep buyer and seller tenant data isolated.
+- Never expose one supplier's private cost, floor price, negotiation policy, or private transaction history to another supplier.
+- Use only authorized history for graph reasoning. If cross-business evidence is used, enforce the applicable permissions and disclose only allowed summaries.
+- Clearly distinguish facts, estimates, and simulated data.
+- Log important actions without logging credentials, tokens, or unnecessary personal data.
+- Sanitize user content and validate all API inputs.
+- Do not store card details.
+- Payment state is confirmed only by trusted server-side PayPal verification.
+- Keep payment status separate from order fulfillment status.
+- Use idempotency and duplicate-event protection for payment operations.
+
+============================================================
+8. EXAMPLE DEMO DATA
+============================================================
+
+Use synthetic demo data, labelled as illustrative. Do not present it as live market pricing.
+
+Example request:
+- Product: school desks
+- Quantity: 100
+- Required material/specifications: configurable in the demo
+- Maximum total budget: buyer-defined
+- Delivery deadline: 7 days
+- Destination: buyer-defined demo location
+
+Example suppliers:
+1. DeskWorks
+   - Catalog: school desks
+   - Example available quantity: 150
+   - Example quote for 100 comparable desks: ₹4,50,000
+   - Example delivery estimate: 6 days
+   - Negotiation policy: may offer a small quantity-based discount above its price floor.
+
+2. FurnitureHub
+   - Catalog: school desks and classroom furniture
+   - Example available quantity: 200
+   - Example quote for 100 comparable desks: ₹4,35,000
+   - Example delivery estimate: 6 days
+   - Negotiation policy: prefers larger orders and can adjust delivery/discount trade-offs.
+
+3. ClassRoom Supply Co.
+   - Catalog: school desks
+   - Example available quantity: 120
+   - Example quote for 100 comparable desks: ₹4,70,000
+   - Example delivery estimate: 4 days
+   - Negotiation policy: prioritizes faster delivery and has a stricter price floor.
+
+All values above are example-only and may be changed to make the demo consistent. Include a visible “Demo data” label. Ensure all sample totals, quantities, price floors, delivery promises, and final quotations are internally consistent.
+
+============================================================
+9. REQUIRED UI SCREENS
+============================================================
+
+1. Landing/sign-in page
+   - Concise product positioning and clear sign-in.
+2. Buyer dashboard
+   - Active requests, quotations waiting for approval, orders, recent activity.
+3. New procurement request
+   - Natural-language input plus editable structured requirements.
+4. Supplier discovery/results
+   - Ranked suppliers, requirement match, delivery estimate, quote/status, graph-based reasons.
+5. Agent negotiation room
+   - Readable chronological timeline of RFQ, initial quote, counteroffers, responses, and policy explanations.
+6. Quotation detail
+   - Full itemized terms, expiry, version, seller approval status, and audit trail.
+7. Seller dashboard/approval queue
+   - Incoming RFQs, draft quotations, approve/reject actions, order notifications.
+8. Buyer approval and payment
+   - Exact final terms, explicit confirmation, PayPal Sandbox checkout.
+9. Orders and fulfillment
+   - Payment status, order status, demo tracking events, relevant quotation.
+10. Agent/graph activity view
+   - Evidence used in ranking and negotiation, with source identifiers and clear explanations.
+
+Design should feel like a modern, credible B2B SaaS product: clean information hierarchy, professional typography, responsive layouts, meaningful status indicators, useful empty states, and accessible contrast. Avoid excessive gradients, decorative cards, and fake analytics. Focus on clarity and trustworthy purchasing decisions.
+
+============================================================
+10. API / MODULE BOUNDARIES
+============================================================
+
+Define clean backend modules or equivalent routes for:
+- Authentication/business context
+- Supplier registry/catalog
+- Procurement requests
+- Supplier discovery and graph evidence
+- Agent orchestration
+- Negotiation and offer validation
+- Quotation versioning and approvals
+- PayPal checkout/capture/webhooks
+- Orders and fulfillment events
+- Audit logs and notifications
+
+Use consistent error responses and input validation. Keep graph queries and payment credentials server-side. Document the main API endpoints and request/response schemas in the README.
+
+============================================================
+11. IMPLEMENTATION ORDER
+============================================================
+
+Build in tested vertical slices, not as one giant code-generation pass.
+
+Phase 1 — Foundation
+- Create the repository structure, frontend, backend, shared types, environment template, README, and health-check endpoint.
+- Configure Supabase Auth, migrations, RLS, and demo business data.
+- Verify that the app can start locally.
+
+Phase 2 — Procurement and suppliers
+- Implement supplier registry, product catalog, inventory, procurement request creation, structured validation, and deterministic supplier filtering.
+- Add three independently configured supplier agents.
+- Test that hard constraints remove ineligible suppliers.
+
+Phase 3 — FalkorDB graph reasoning
+- Connect to FalkorDB through the backend.
+- Add graph schema/seed script and stable record-ID mapping.
+- Implement real graph queries for historical comparable orders and delivery evidence.
+- Make graph results affect ranking or negotiation recommendations.
+- Show a clear explanation and evidence trail in the UI.
+- Add graceful failure handling if FalkorDB is unavailable; clearly label fallback behavior.
+
+Phase 4 — Agent negotiation
+- Implement structured RFQs, initial quotes, counteroffers, negotiation round limits, and server-side policy validation.
+- Save each message/offer and its version.
+- Test accepted, rejected, out-of-budget, unavailable-stock, and missed-deadline cases.
+
+Phase 5 — Human approvals and PayPal
+- Implement seller approval and buyer approval for exact quotation versions.
+- Integrate PayPal Sandbox server-side order creation and capture/verification.
+- Add webhook verification/idempotency if using webhooks.
+- Test cancellation, failed payment, duplicate webhook, amount mismatch, and successful payment.
+
+Phase 6 — Orders, demo polish, and reliability
+- Add order/fulfillment timeline and simulated tracking events.
+- Improve loading/error/empty states and accessibility.
+- Run end-to-end demo from request to verified sandbox payment.
+- Add tests, seed/reset scripts, and troubleshooting instructions.
+- Record a demo only after the full flow has been tested.
+
+Do not start by generating all screens with mocked data and call it complete. Build the minimum full-stack vertical slice first, then expand.
+
+============================================================
+12. ACCEPTANCE CRITERIA
+============================================================
+
+The project is considered demo-ready only when:
+
+- A user can sign in and act within the correct business context.
+- A procurement request can be created and stored.
+- Supplier discovery uses real stored catalog data and enforces hard constraints.
+- At least three supplier agents produce different responses based on their own policies.
+- At least one real FalkorDB query influences supplier ranking, explanation, or negotiation strategy.
+- The app can show the graph evidence used for a decision.
+- Negotiation has a bounded number of rounds and records its history.
+- Out-of-policy offers are rejected by backend validation.
+- Seller approval and buyer approval are separate, explicit actions.
+- Changes to a quotation after approval invalidate the old approval.
+- PayPal Sandbox checkout uses the exact buyer-approved amount.
+- The backend verifies the payment before marking it paid.
+- Failed/cancelled payment does not create a paid order.
+- Payment processing is protected against duplicate capture/event processing.
+- Tenant isolation and secrets handling are implemented.
+- The README explains setup, migrations, environment variables, graph seeding, PayPal Sandbox setup, tests, and demo flow.
+- All synthetic supplier data and simulated tracking are clearly labelled.
+- No button is merely decorative: every visible primary action works or is clearly disabled with an explanation.
+
+============================================================
+13. EXPECTED REPOSITORY DELIVERABLES
+============================================================
+
+- Working React frontend.
+- Working TypeScript backend.
+- Supabase migration files and safe seed script.
+- FalkorDB graph initialization/seed script and documented graph queries.
+- Three configured supplier-agent profiles and negotiation policies.
+- LLM prompt/schema/service adapter with validation and fallback.
+- PayPal Sandbox service and configuration guide.
+- Automated tests for critical rules and workflow.
+- .env.example containing placeholders only.
+- README with architecture diagram or Mermaid flow, setup, commands, limitations, and demo script.
+- A concise demo scenario showing request → graph-informed shortlist → negotiation → seller approval → buyer approval → PayPal Sandbox payment → order status.
+
+============================================================
+14. IMPORTANT IMPLEMENTATION INSTRUCTIONS FOR ANTIGRAVITY
+============================================================
+
+- First inspect the existing workspace and report what already exists before changing files.
+- If this is a new workspace, propose the folder structure and create it.
+- Read this entire abstract before coding.
+- Work phase by phase. After each phase, run the relevant tests/build and report actual results.
+- Do not claim an integration works until it has been configured and tested.
+- Do not invent environment variables, API routes, database schemas, SDK methods, or FalkorDB commands. Check the installed package versions and official documentation where needed.
+- Keep the code modular and typed. Avoid one giant component or one giant backend file.
+- Use migrations and seed scripts rather than requiring manual database setup wherever possible.
+- Never place secrets in frontend code or commit them.
+- Use real Supabase/FalkorDB/PayPal integrations when credentials are configured. If credentials are missing, provide a clearly labelled local development mode and state exactly what is not connected.
+- Do not silently replace FalkorDB reasoning or PayPal checkout with mocks.
+- Never fake a successful payment.
+- Prioritize a complete, testable end-to-end purchase flow over unnecessary features.
+- Before finishing, provide a status report with completed features, commands run, tests/build results, required environment variables, known limitations, and exact manual setup steps.
+
+END OF ABSTRACT
