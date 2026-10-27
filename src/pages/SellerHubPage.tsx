@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { NegotiationDetailModal } from "@/components/negotiation/NegotiationDetailModal";
 import { MaterialIcon } from "@/components/ui/MaterialIcon";
-import { cleanHumanChatText } from "@/lib/utils";
+import { cleanHumanChatText, isWithinTimeline, type TimelineFilterOption, TIMELINE_FILTER_OPTIONS } from "@/lib/utils";
 
 export const SellerHubPage: React.FC = () => {
   const { 
@@ -105,9 +105,19 @@ export const SellerHubPage: React.FC = () => {
     );
   }, [pendingQuotes, activeSeller]);
 
-  // Filtered chats for Live Negotiations & Chats tab
+  // RFQ Timeline Filter state: "this_year" by default
+  const [rfqTimelineFilter, setRfqTimelineFilter] = useState<TimelineFilterOption>("this_year");
+
+  // Filtered RFQs for RFQs & Approvals queue
+  const timelineFilteredRFQs = useMemo(() => {
+    return scopedPendingQuotes.filter((q) => isWithinTimeline(q.createdAt, rfqTimelineFilter));
+  }, [scopedPendingQuotes, rfqTimelineFilter]);
+
+  // Filtered chats for Live Negotiations & Chats tab (Scoped by timeline, search, and status)
   const filteredChats = useMemo(() => {
     return scopedPendingQuotes.filter((q) => {
+      if (!isWithinTimeline(q.createdAt, rfqTimelineFilter)) return false;
+
       const matchesSearch = 
         q.buyerName?.toLowerCase().includes(chatSearchQuery.toLowerCase()) ||
         q.item?.toLowerCase().includes(chatSearchQuery.toLowerCase()) ||
@@ -121,7 +131,7 @@ export const SellerHubPage: React.FC = () => {
       if (chatFilter === "active") return q.status !== "approved" && q.status !== "rejected";
       return true;
     });
-  }, [scopedPendingQuotes, chatSearchQuery, chatFilter]);
+  }, [scopedPendingQuotes, chatSearchQuery, chatFilter, rfqTimelineFilter]);
 
   const activeChat = useMemo(() => {
     if (selectedChatId) {
@@ -1127,6 +1137,26 @@ export const SellerHubPage: React.FC = () => {
                       </button>
                     ))}
                   </div>
+
+                  {/* Timeline Filter Row */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[11px] pt-1.5 border-t border-slate-100 dark:border-[#1B2335]">
+                    <span className="text-[10px] font-mono text-slate-400 dark:text-gray-500 uppercase px-1 font-bold">
+                      Time:
+                    </span>
+                    {TIMELINE_FILTER_OPTIONS.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setRfqTimelineFilter(t.id)}
+                        className={`px-2 py-0.5 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap text-[10px] ${
+                          rfqTimelineFilter === t.id
+                            ? "bg-purple-600 text-white shadow-xs"
+                            : "bg-slate-100 dark:bg-gray-800/60 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Chats Stream List */}
@@ -1463,10 +1493,36 @@ export const SellerHubPage: React.FC = () => {
         {activeNav === "rfqs" && (
           <div className="space-y-6">
             <div className="rounded-2xl border border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0E1526] p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Quotations Awaiting Seller Human Approval</h2>
-              <p className="text-xs text-slate-500 dark:text-gray-400 mb-6">
-                Step 5 human safeguard: An LLM or automated agent cannot finalize commercial terms without explicit seller confirmation.
-              </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
+                    Quotations Awaiting Seller Human Approval ({timelineFilteredRFQs.length})
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-gray-400">
+                    Step 5 human safeguard: An LLM or automated agent cannot finalize commercial terms without explicit seller confirmation.
+                  </p>
+                </div>
+
+                {/* Timeline Filter Controls */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#12192B] p-1 rounded-xl border border-slate-200 dark:border-[#1E2638] overflow-x-auto self-start sm:self-auto">
+                  <span className="text-[10px] font-mono text-slate-400 dark:text-gray-500 uppercase px-2 font-bold hidden md:inline">
+                    Timeline:
+                  </span>
+                  {TIMELINE_FILTER_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setRfqTimelineFilter(opt.id)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                        rfqTimelineFilter === opt.id
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="space-y-4">
                 {scopedPendingQuotes.length === 0 ? (
@@ -1477,8 +1533,24 @@ export const SellerHubPage: React.FC = () => {
                       Only quotation requests specifically submitted to {activeSeller?.name || "your business"} will appear in this approval queue.
                     </p>
                   </div>
+                ) : timelineFilteredRFQs.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-[#1E273C] p-10 text-center space-y-3">
+                    <Clock className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                    <p className="text-sm font-semibold text-slate-700 dark:text-gray-300">
+                      No Quotations found for {TIMELINE_FILTER_OPTIONS.find((t) => t.id === rfqTimelineFilter)?.label || "This Year"}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-gray-500 max-w-sm mx-auto">
+                      You have {scopedPendingQuotes.length} quotation{scopedPendingQuotes.length > 1 ? "s" : ""} recorded in total under other timeframes.
+                    </p>
+                    <button
+                      onClick={() => setRfqTimelineFilter("all")}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-gray-700 bg-white dark:bg-[#12192B] hover:bg-slate-50 dark:hover:bg-[#1A233C] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-200 transition-all cursor-pointer"
+                    >
+                      <span>View All Time ({scopedPendingQuotes.length})</span>
+                    </button>
+                  </div>
                 ) : (
-                  scopedPendingQuotes.map((q) => (
+                  timelineFilteredRFQs.map((q) => (
                   <div
                     key={q.id}
                     className="rounded-xl border border-slate-200 dark:border-[#1E273C] bg-slate-50/70 dark:bg-[#0A0F1D] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4"
@@ -1495,6 +1567,12 @@ export const SellerHubPage: React.FC = () => {
                         }`}>
                           {q.status === "awaiting_approval" ? "Awaiting Your Sign-Off" : q.status.toUpperCase()}
                         </span>
+                        {q.createdAt && (
+                          <span className="text-[10px] text-slate-400 dark:text-gray-500 font-mono flex items-center gap-1">
+                            <Calendar className="h-2.5 w-2.5" />
+                            {new Date(q.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        )}
                       </div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">{q.buyerName}</h4>
                       <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">

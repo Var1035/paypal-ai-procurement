@@ -21,12 +21,13 @@ import {
   MessageSquare,
   Layers,
   CreditCard,
-  Square
+  Square,
+  Calendar
 } from "lucide-react";
 import { NegotiationDetailModal } from "@/components/negotiation/NegotiationDetailModal";
 import { PayPalCheckoutModal } from "@/components/payment/PayPalCheckoutModal";
 import { MaterialIcon } from "@/components/ui/MaterialIcon";
-import { cleanHumanChatText } from "@/lib/utils";
+import { cleanHumanChatText, isWithinTimeline, type TimelineFilterOption, TIMELINE_FILTER_OPTIONS } from "@/lib/utils";
 
 export interface DetailedAIAnalysis {
   query: string;
@@ -248,6 +249,14 @@ export const AISourcingPage: React.FC = () => {
       (user?.email && q.buyerName?.toLowerCase().includes(user.email.split("@")[0].toLowerCase()))
     );
   }, [pendingQuotes, activeBuyer, user]);
+
+  // RFQ Timeline Filter state: "this_year" by default
+  const [rfqTimelineFilter, setRfqTimelineFilter] = useState<TimelineFilterOption>("this_year");
+
+  // Filtered quotations by selected timeline
+  const timelineFilteredQuotes = useMemo(() => {
+    return scopedBuyerQuotes.filter((q) => isWithinTimeline(q.createdAt, rfqTimelineFilter));
+  }, [scopedBuyerQuotes, rfqTimelineFilter]);
 
   const scopedBuyerOrders = useMemo(() => {
     return orders.filter((o) => 
@@ -1204,16 +1213,33 @@ export const AISourcingPage: React.FC = () => {
 
             {/* QUOTATIONS SECTION */}
             <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0E1424] p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-[#1A2236] pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-[#1A2236] pb-3">
                 <div className="flex items-center gap-2">
                   <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white font-mono uppercase tracking-wider">
-                    Sourced Quotations ({scopedBuyerQuotes.length})
+                    Sourced Quotations ({timelineFilteredQuotes.length})
                   </h3>
                 </div>
-                <span className="text-[11px] text-slate-500 dark:text-gray-400 font-mono">
-                  Autonomous Multi-Agent RFQs
-                </span>
+
+                {/* Timeline Filter Controls */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#12192B] p-1 rounded-xl border border-slate-200 dark:border-[#1E2638] overflow-x-auto">
+                  <span className="text-[10px] font-mono text-slate-400 dark:text-gray-500 uppercase px-2 font-bold hidden md:inline">
+                    Timeline:
+                  </span>
+                  {TIMELINE_FILTER_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      onClick={() => setRfqTimelineFilter(opt.id)}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                        rfqTimelineFilter === opt.id
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {scopedBuyerQuotes.length === 0 ? (
@@ -1230,9 +1256,25 @@ export const AISourcingPage: React.FC = () => {
                     <span>Start Sourcing RFQ</span>
                   </button>
                 </div>
+              ) : timelineFilteredQuotes.length === 0 ? (
+                <div className="py-10 text-center space-y-3">
+                  <Clock className="mx-auto h-8 w-8 text-amber-500/80" />
+                  <p className="text-sm font-semibold text-slate-800 dark:text-gray-200">
+                    No quotations found for {TIMELINE_FILTER_OPTIONS.find((t) => t.id === rfqTimelineFilter)?.label || "This Year"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-gray-400 max-w-sm mx-auto">
+                    You have {scopedBuyerQuotes.length} quotation{scopedBuyerQuotes.length > 1 ? "s" : ""} recorded in total under other timeframes.
+                  </p>
+                  <button
+                    onClick={() => setRfqTimelineFilter("all")}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-gray-700 bg-white dark:bg-[#12192B] hover:bg-slate-50 dark:hover:bg-[#1A233C] px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-200 transition-all cursor-pointer"
+                  >
+                    <span>View All Time ({scopedBuyerQuotes.length})</span>
+                  </button>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {scopedBuyerQuotes.map((q) => (
+                  {timelineFilteredQuotes.map((q) => (
                     <div
                       key={q.id}
                       className="rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50/60 dark:bg-[#111728] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-2xs hover:border-blue-400 dark:hover:border-blue-500/30 transition-all"
@@ -1248,6 +1290,12 @@ export const AISourcingPage: React.FC = () => {
                           <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
                             • {q.quantity} Units
                           </span>
+                          {q.createdAt && (
+                            <span className="text-[10px] text-slate-400 dark:text-gray-500 font-mono flex items-center gap-1">
+                              <Calendar className="h-2.5 w-2.5" />
+                              {new Date(q.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-slate-500 dark:text-gray-400 flex flex-wrap items-center gap-3">
                           <span className="flex items-center gap-1">

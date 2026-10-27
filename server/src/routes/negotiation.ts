@@ -246,6 +246,7 @@ negotiationRouter.post("/initiate", async (req: Request, res: Response, next: Ne
       roundCount: currentRound,
       transcript,
       status: "awaiting_seller_approval",
+      createdAt: quote.created_at,
     });
   } catch (err) {
     next(err);
