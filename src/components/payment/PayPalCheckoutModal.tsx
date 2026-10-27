@@ -4,10 +4,7 @@ import {
   AlertCircle, 
   X, 
   RefreshCw,
-  Building2,
-  Copy,
-  Check,
-  CreditCard
+  Building2
 } from "lucide-react";
 import { api } from "@/services/apiClient";
 
@@ -47,7 +44,6 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [captureId, setCaptureId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -144,23 +140,6 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
     }
   };
 
-  const handleSimulatePayment = async () => {
-    setCapturing(true);
-    setLoading(true);
-    setError(null);
-    try {
-      await api.updateOrderStage(order.id, "In production", "Healthy");
-      setPaymentSuccess(true);
-      setCaptureId(`SIM-PAYPAL-${Math.floor(100000 + Math.random() * 900000)}`);
-      onPaymentSuccess?.();
-    } catch (err: any) {
-      setError(err?.message || "Failed to simulate payment");
-    } finally {
-      setCapturing(false);
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0A0F1E] shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
@@ -250,77 +229,6 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
             </div>
           )}
 
-          {/* PayPal Sandbox Test Card Notice & Helper */}
-          {config.mode === "sandbox" && !paymentSuccess && (
-            <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30 p-3 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
-                  <CreditCard className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  PayPal Sandbox Test Card (Do NOT use real cards)
-                </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-200/80 dark:bg-amber-800/60 font-semibold text-amber-800 dark:text-amber-200 uppercase tracking-wider">
-                  Test Mode
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-600 dark:text-gray-300">
-                PayPal Sandbox blocks real credit/debit cards. When the PayPal popup appears, use this official Sandbox test card:
-              </p>
-              <div className="flex items-center justify-between bg-white dark:bg-slate-900/80 border border-amber-200 dark:border-amber-500/30 rounded-lg p-2 font-mono text-xs">
-                <div>
-                  <div className="text-[10px] text-slate-400 uppercase font-sans">Card Number (Visa)</div>
-                  <div className="font-bold tracking-wider text-slate-900 dark:text-white">
-                    4111 1111 1111 1111
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText("4111111111111111");
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/60 dark:hover:bg-amber-800/80 text-amber-900 dark:text-amber-200 text-[11px] font-sans font-medium transition cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-slate-600 dark:text-gray-300 pt-0.5">
-                <div className="bg-white/60 dark:bg-slate-900/40 p-1.5 rounded border border-amber-100 dark:border-slate-800">
-                  <span className="block text-[9px] text-slate-400 font-sans uppercase">Exp Date</span>
-                  <span className="font-mono font-semibold text-slate-800 dark:text-gray-200">12/28</span>
-                </div>
-                <div className="bg-white/60 dark:bg-slate-900/40 p-1.5 rounded border border-amber-100 dark:border-slate-800">
-                  <span className="block text-[9px] text-slate-400 font-sans uppercase">CVV / CSC</span>
-                  <span className="font-mono font-semibold text-slate-800 dark:text-gray-200">123</span>
-                </div>
-                <div className="bg-white/60 dark:bg-slate-900/40 p-1.5 rounded border border-amber-100 dark:border-slate-800">
-                  <span className="block text-[9px] text-slate-400 font-sans uppercase">ZIP Code</span>
-                  <span className="font-mono font-semibold text-slate-800 dark:text-gray-200">95131</span>
-                </div>
-              </div>
-
-              {/* Crucial Sandbox Guidelines */}
-              <div className="rounded-lg bg-amber-100/70 dark:bg-amber-900/30 p-2 text-[11px] text-amber-950 dark:text-amber-200 space-y-1">
-                <div>
-                  <strong>• Option A (100% Guaranteed):</strong> On the PayPal popup, click <strong>"Log In"</strong> with your Sandbox Personal Buyer account (<code className="font-mono text-[10px] bg-amber-200/60 dark:bg-amber-800/40 px-1 py-0.5 rounded">sb-...@personal.example.com</code>) from your PayPal Developer dashboard.
-                </div>
-                <div>
-                  <strong>• Option B (Card):</strong> If paying by card, change <strong>Country / Region to United States</strong>. Selecting India triggers SMS OTP which Sandbox cannot deliver.
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Error Message */}
           {error && (
             <div className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-950/30 p-3 text-xs text-rose-800 dark:text-rose-300 flex items-center gap-2">
@@ -356,7 +264,7 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
             </div>
           ) : (
             /* Action Button */
-            <div className="space-y-2 pt-2">
+            <div className="space-y-3 pt-2">
               <button
                 onClick={handleInitiatePayPal}
                 disabled={loading || capturing}
@@ -373,16 +281,6 @@ export const PayPalCheckoutModal: React.FC<PayPalCheckoutModalProps> = ({
                     <span>• Pay ₹{order.amount.toLocaleString()}</span>
                   </>
                 )}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSimulatePayment}
-                disabled={loading || capturing}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50/50 hover:bg-emerald-100/70 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold text-xs transition cursor-pointer"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>Instant Direct Payment (No Phone / OTP Needed)</span>
               </button>
 
               <p className="text-[10px] text-center text-slate-400 dark:text-gray-500 font-mono">
