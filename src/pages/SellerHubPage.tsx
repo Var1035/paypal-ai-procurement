@@ -14,6 +14,7 @@ import {
   Search, 
   Plus, 
   Calendar, 
+  Clock,
   X,
   Tag,
   Filter,

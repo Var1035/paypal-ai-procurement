@@ -78,6 +78,16 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
     setIsTyping(false);
   }, [isOpen, initialViewMode, quotation?.id]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Build clean transcript if empty
   const rawTranscript: NegotiationMessage[] = quotation?.transcript && quotation.transcript.length > 0
     ? quotation.transcript
@@ -166,11 +176,11 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-      <div className="w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0A0F1E] shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex flex-col w-screen h-screen bg-white dark:bg-[#070B16] overflow-hidden animate-in fade-in duration-150">
+      <div className="w-full h-full flex flex-col overflow-hidden">
         
         {/* Top Header Bar */}
-        <div className="border-b border-slate-100 dark:border-[#1A233A] bg-slate-50/80 dark:bg-[#0E1529] px-6 py-4 flex items-center justify-between">
+        <div className="border-b border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-3.5 flex items-center justify-between shrink-0 shadow-xs">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
               <Bot className="h-5 w-5" />
@@ -203,18 +213,20 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
 
           <button
             onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 hover:bg-slate-200/60 dark:hover:bg-gray-800 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-[#111728] hover:bg-slate-100 dark:hover:bg-[#182035] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-300 transition-colors cursor-pointer"
+            title="Close Full Screen View (Esc)"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
+            <span className="hidden sm:inline">Close</span>
           </button>
         </div>
 
         {/* View Mode Segmented Controls */}
-        <div className="px-6 py-2.5 border-b border-slate-100 dark:border-[#1A233A] bg-slate-100/50 dark:bg-[#0B1123] flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="px-6 sm:px-8 py-2.5 border-b border-slate-200 dark:border-[#182033] bg-slate-100/70 dark:bg-[#0B1123] flex items-center justify-between gap-3 overflow-x-auto shrink-0">
           <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/60 dark:bg-[#131B32] border border-slate-300/40 dark:border-gray-800">
             <button
               onClick={() => setActiveTab("chat")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "chat"
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
                   : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
@@ -227,7 +239,7 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
 
             <button
               onClick={() => setActiveTab("detailed")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "detailed"
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
                   : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
@@ -239,7 +251,7 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
 
             <button
               onClick={() => setActiveTab("protocol")}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "protocol"
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
                   : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
@@ -275,7 +287,8 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
         </div>
 
         {/* Modal Body Area */}
-        <div className="p-6 overflow-y-auto flex-1 bg-white dark:bg-[#0A0F1E] space-y-4" ref={chatScrollRef}>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50 dark:bg-[#070B16]" ref={chatScrollRef}>
+          <div className="max-w-4xl mx-auto space-y-4">
           
           {/* ============================================================== */}
           {/* VIEW 1: LIVE CHAT PREVIEW (Chatting Style of Buyer & Seller) */}
@@ -609,10 +622,11 @@ export const NegotiationDetailModal: React.FC<NegotiationDetailModalProps> = ({
             </div>
           )}
 
+          </div>
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="border-t border-slate-100 dark:border-[#1E2638] bg-slate-50 dark:bg-[#0B0F1D] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="border-t border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 shadow-xs">
           <div className="text-xs text-slate-600 dark:text-gray-400 flex items-center gap-2">
             <span>Agreed Settlement:</span>
             <span className="font-mono font-extrabold text-sm text-slate-900 dark:text-white">

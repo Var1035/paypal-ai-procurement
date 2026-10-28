@@ -223,6 +223,16 @@ export const AISourcingPage: React.FC = () => {
     }
   }, [negotiationTranscript, isNegotiating]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && negotiationActive) {
+        setNegotiationActive(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [negotiationActive]);
+
   const handleStopNegotiation = () => {
     stopNegotiationRef.current = true;
     setIsStopped(true);
@@ -1492,103 +1502,119 @@ export const AISourcingPage: React.FC = () => {
       </div>
 
       {/* ============================================================== */}
-      {/* Interactive Negotiation Room Modal (Dynamic Multi-Round Convergence) */}
+      {/* Interactive Negotiation Room Modal (Full Screen Workstation) */}
       {/* ============================================================== */}
       {negotiationActive && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-blue-500/30 bg-white dark:bg-[#0C1222] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
-            {/* Modal Header */}
-            <div className="border-b border-slate-100 dark:border-[#1E2638] bg-slate-50 dark:bg-[#11182D] px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-600/20 border border-blue-200 dark:border-blue-500/40 text-blue-600 dark:text-blue-400">
-                  <Bot className="h-4 w-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-50 flex flex-col w-screen h-screen bg-white dark:bg-[#070B16] overflow-hidden animate-in fade-in duration-150">
+          
+          {/* Full Screen Top Header Bar */}
+          <div className="border-b border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-3.5 flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-600/20 border border-blue-200 dark:border-blue-500/40 text-blue-600 dark:text-blue-400 shadow-xs">
+                <Bot className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
                     Agent-to-Agent Negotiation Room
                   </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-gray-400">
-                    Buyer Agent ⟷ {negotiationActive.businessName} Agent (Round {negotiationRound})
-                  </p>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">
+                    Round {negotiationRound}
+                  </span>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {isNegotiating && (
-                  <button
-                    type="button"
-                    onClick={handleStopNegotiation}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-sm transition-all cursor-pointer animate-pulse"
-                    title="Stop autonomous negotiation at current round"
-                  >
-                    <Square className="h-3 w-3 fill-current" />
-                    <span>Stop Round</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setNegotiationActive(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-gray-800 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <p className="text-xs text-slate-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
+                  <span>Buyer Agent ({activeBuyer.name})</span>
+                  <span>⟷</span>
+                  <span>{negotiationActive.businessName} Agent</span>
+                  <span>• {targetQuantity} Units</span>
+                </p>
               </div>
             </div>
 
-            {/* Segmented Mode Switcher: Live Preview vs Detailed View vs Protocol Log */}
-            <div className="px-6 py-2.5 border-b border-slate-100 dark:border-[#1E2638] bg-slate-100/60 dark:bg-[#0B1123] flex items-center justify-between gap-2 overflow-x-auto">
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/60 dark:bg-[#131B32] border border-slate-300/40 dark:border-gray-800">
+            <div className="flex items-center gap-2.5">
+              {isNegotiating && (
                 <button
-                  onClick={() => setNegotiationViewTab("chat")}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    negotiationViewTab === "chat"
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                  }`}
+                  type="button"
+                  onClick={handleStopNegotiation}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-sm transition-all cursor-pointer animate-pulse"
+                  title="Stop autonomous negotiation at current round"
                 >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  <span>Live Chat Preview</span>
-                  {isNegotiating && <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
+                  <Square className="h-3 w-3 fill-current" />
+                  <span>Stop Round</span>
                 </button>
+              )}
 
-                <button
-                  onClick={() => setNegotiationViewTab("detailed")}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    negotiationViewTab === "detailed"
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  <span>Detailed View & Specs</span>
-                </button>
+              <button
+                onClick={() => setNegotiationActive(null)}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-[#111728] hover:bg-slate-100 dark:hover:bg-[#182035] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-300 transition-colors cursor-pointer"
+                title="Exit Full Screen Negotiation Room (Esc)"
+              >
+                <X className="h-4 w-4" />
+                <span className="hidden sm:inline">Close</span>
+              </button>
+            </div>
+          </div>
 
-                <button
-                  onClick={() => setNegotiationViewTab("protocol")}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    negotiationViewTab === "protocol"
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-                >
-                  <Layers className="h-3.5 w-3.5" />
-                  <span>Protocol Log</span>
-                </button>
-              </div>
+          {/* Subheader / Mode Switcher Bar */}
+          <div className="px-6 sm:px-8 py-2.5 border-b border-slate-200 dark:border-[#182033] bg-slate-100/70 dark:bg-[#0B1123] flex items-center justify-between gap-3 overflow-x-auto shrink-0">
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/60 dark:bg-[#131B32] border border-slate-300/40 dark:border-gray-800">
+              <button
+                onClick={() => setNegotiationViewTab("chat")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  negotiationViewTab === "chat"
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>Live Chat Preview</span>
+                {isNegotiating && <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
+              </button>
 
-              <div className="text-[11px] font-mono text-slate-500 dark:text-gray-400 hidden sm:block">
-                Ollama: <strong className="text-blue-600 dark:text-blue-400">DeepSeek-R1</strong> vs <strong className="text-purple-600 dark:text-purple-400">Qwen 2.5</strong>
-              </div>
+              <button
+                onClick={() => setNegotiationViewTab("detailed")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  negotiationViewTab === "detailed"
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>Detailed View & Specs</span>
+              </button>
+
+              <button
+                onClick={() => setNegotiationViewTab("protocol")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  negotiationViewTab === "protocol"
+                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                <span>Protocol Log</span>
+              </button>
             </div>
 
-            {/* Modal Body Area */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-white dark:bg-[#0C1222]" ref={negotiationScrollRef}>
+            <div className="text-[11px] font-mono text-slate-500 dark:text-gray-400 hidden sm:flex items-center gap-3">
+              <span>
+                Ollama: <strong className="text-blue-600 dark:text-blue-400">DeepSeek-R1 (14B)</strong> vs <strong className="text-purple-600 dark:text-purple-400">Qwen 2.5 (14B)</strong>
+              </span>
+              <span>•</span>
+              <span>
+                Item: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.name}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Full Screen Scrollable Body Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50 dark:bg-[#070B16]" ref={negotiationScrollRef}>
+            <div className="max-w-4xl mx-auto space-y-4">
               
               {/* Active LLM Inference Banner & Live Round Status */}
               {isNegotiating ? (
-                <div className="rounded-xl border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-950/40 p-3.5 flex items-center justify-between gap-3 animate-pulse">
-                  <div className="flex items-center gap-2.5">
+                <div className="rounded-xl border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-950/40 p-4 flex items-center justify-between gap-3 animate-pulse shadow-xs">
+                  <div className="flex items-center gap-3">
                     <Bot className="h-5 w-5 text-blue-600 animate-spin shrink-0" />
                     <div>
                       <span className="text-xs font-bold text-blue-900 dark:text-blue-300 block font-mono">
@@ -1609,7 +1635,7 @@ export const AISourcingPage: React.FC = () => {
                   </button>
                 </div>
               ) : isStopped ? (
-                <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-3 flex items-center justify-between gap-3">
+                <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-center justify-between gap-3 shadow-xs">
                   <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300">
                     <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
                     <span>
@@ -1639,8 +1665,8 @@ export const AISourcingPage: React.FC = () => {
                       if (msg.sender === "safeguard") {
                         return (
                           <div key={idx} className="flex justify-center my-3">
-                            <div className="flex items-center gap-2 rounded-full px-3.5 py-1 text-[11px] font-mono font-medium border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 shadow-xs">
-                              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <div className="flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-mono font-medium border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 shadow-xs">
+                              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                               <span>{cleanHumanChatText(msg.text)}</span>
                             </div>
                           </div>
@@ -1672,13 +1698,13 @@ export const AISourcingPage: React.FC = () => {
                           </div>
 
                           <div
-                            className={`max-w-[85%] sm:max-w-[78%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm transition-all ${
+                            className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm transition-all ${
                               isBuyer
                                 ? "bg-blue-50 dark:bg-[#111A33] border border-blue-200 dark:border-blue-500/30 text-slate-900 dark:text-blue-100 rounded-tl-sm"
                                 : "bg-purple-50 dark:bg-[#1A1430] border border-purple-200 dark:border-purple-500/30 text-slate-900 dark:text-purple-100 rounded-tr-sm"
                             }`}
                           >
-                            <p>{cleanHumanChatText(msg.text)}</p>
+                            <p className="text-[13px] leading-relaxed">{cleanHumanChatText(msg.text)}</p>
 
                             <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-white/10 flex items-center justify-between text-[11px] font-mono">
                               <span className="opacity-75">
@@ -1703,7 +1729,7 @@ export const AISourcingPage: React.FC = () => {
               {/* 2. DETAILED VIEW & SPECS */}
               {negotiationViewTab === "detailed" && (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-slate-50/50 dark:bg-[#0E1528] p-5 space-y-4">
+                  <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-slate-50/50 dark:bg-[#0E1528] p-6 space-y-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
@@ -1721,7 +1747,7 @@ export const AISourcingPage: React.FC = () => {
                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
                           BATCH VALUE
                         </span>
-                        <span className="text-lg font-mono font-extrabold text-slate-900 dark:text-white">
+                        <span className="text-xl font-mono font-extrabold text-slate-900 dark:text-white">
                           ₹{(negotiationTranscript[negotiationTranscript.length - 1]?.price * targetQuantity || targetBudget).toLocaleString()}
                         </span>
                       </div>
@@ -1755,7 +1781,7 @@ export const AISourcingPage: React.FC = () => {
               {/* 3. PROTOCOL LOG */}
               {negotiationViewTab === "protocol" && (
                 <div className="space-y-3">
-                  <div className="rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-950/20 p-3 text-xs text-blue-900 dark:text-blue-300">
+                  <div className="rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-950/20 p-3.5 text-xs text-blue-900 dark:text-blue-300">
                     <strong>Protocol Notice:</strong> Negotiation uses dynamic convergence — agents negotiate until a deal is reached or price gap falls below 2%. Ollama models DeepSeek-R1 (14B) & Qwen 2.5 (14B) run multi-turn bargaining with server-enforced price floors.
                   </div>
 
@@ -1787,55 +1813,51 @@ export const AISourcingPage: React.FC = () => {
               )}
 
             </div>
+          </div>
 
-            {/* Modal Footer Controls */}
-            <div className="border-t border-slate-100 dark:border-[#1E2638] bg-slate-50 dark:bg-[#0B0F1D] p-5 flex items-center justify-between">
-              <div className="text-xs text-slate-600 dark:text-gray-400">
-                Current Agreed Total:{" "}
-                <span className="font-mono font-bold text-slate-900 dark:text-white">
-                  ₹{negotiationTranscript[negotiationTranscript.length - 1]?.price.toLocaleString() || "..."}
+          {/* Full Screen Bottom Footer Controls */}
+          <div className="border-t border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 shadow-xs">
+            <div className="text-xs sm:text-sm text-slate-600 dark:text-gray-400 flex items-center gap-2">
+              <span>Current Agreed Total:</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white text-sm sm:text-base">
+                ₹{negotiationTranscript[negotiationTranscript.length - 1]?.price.toLocaleString() || "..."}
+              </span>
+              {negotiationActive && (
+                <span className="text-[11px] font-mono text-slate-400 dark:text-gray-500">
+                  (Floor: ₹{negotiationActive.floorPrice.toLocaleString()} / unit)
                 </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {!negotiationSubmitted ? (
-                  <button
-                    onClick={handleSendCounteroffer}
-                    disabled={isNegotiating}
-                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-semibold text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <span>Transmit Round {negotiationRound + 1} Counteroffer</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                ) : !negotiationSubmitted ? (
-                  <button
-                    onClick={() => setNegotiationSubmitted(true)}
-                    disabled={isNegotiating}
-                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-4 py-2 text-xs font-semibold text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Send for Seller Approval</span>
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4" /> Queued in {negotiationActive.businessName} Hub
-                    </span>
-                    <button
-                      onClick={() => {
-                        setNegotiationActive(null);
-                        setActiveTab("my_requests");
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-all cursor-pointer shadow-sm"
-                    >
-                      View in My RFQs
-                    </button>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
+            <div className="flex items-center gap-3">
+              {!negotiationSubmitted ? (
+                <button
+                  onClick={handleSendCounteroffer}
+                  disabled={isNegotiating}
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <span>Transmit Round {negotiationRound + 1} Counteroffer</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" /> Queued in {negotiationActive.businessName} Hub
+                  </span>
+                  <button
+                    onClick={() => {
+                      setNegotiationActive(null);
+                      setActiveTab("my_requests");
+                    }}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm"
+                  >
+                    View in My RFQs
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+
         </div>
       )}
 
