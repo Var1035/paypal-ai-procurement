@@ -562,10 +562,13 @@ export const AISourcingPage: React.FC = () => {
     setNegotiationStatusText("Initiating autonomous negotiation between DeepSeek-R1 and Qwen 2.5...");
 
     try {
+      const catalogLotValue = product.basePrice * targetQuantity;
+      const effectiveTargetBudget = targetBudget > 0 ? Math.min(targetBudget, catalogLotValue) : catalogLotValue;
+
       const res = await initiateNegotiation({
         productId: product.id,
         quantity: targetQuantity,
-        buyerTargetPrice: targetBudget,
+        buyerTargetPrice: effectiveTargetBudget,
         buyerName: activeBuyer.name,
         strategy: buyerPreferences.strategy,
       });
@@ -1983,7 +1986,15 @@ export const AISourcingPage: React.FC = () => {
       {negotiationActive && (() => {
         const latestBuyerMsg = negotiationTranscript.filter((m) => m.sender === "buyer_agent").slice(-1)[0];
         const latestSellerMsg = negotiationTranscript.filter((m) => m.sender === "supplier_agent").slice(-1)[0];
-        const currentBuyerBid = latestBuyerMsg?.price || Math.round(targetBudget / (targetQuantity || 1));
+        const hasBuyerBid = Boolean(latestBuyerMsg);
+
+        // Smart opening bid: 90% of catalog base price or budget ceiling, bounded so it never exceeds catalog price
+        const effectiveBudgetPerUnit = Math.round(targetBudget / (targetQuantity || 1));
+        const defaultOpeningBid = Math.min(
+          Math.round(negotiationActive.basePrice * 0.90),
+          effectiveBudgetPerUnit > 0 ? effectiveBudgetPerUnit : negotiationActive.basePrice
+        );
+        const currentBuyerBid = latestBuyerMsg?.price || defaultOpeningBid;
         const currentSellerOffer = latestSellerMsg?.price || negotiationActive.basePrice;
         const currentAgreedPrice = negotiationTranscript[negotiationTranscript.length - 1]?.price || currentSellerOffer;
         const spreadGap = Math.abs(currentSellerOffer - currentBuyerBid);
@@ -2139,7 +2150,7 @@ export const AISourcingPage: React.FC = () => {
                       </div>
                       <div>
                         <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400 uppercase block">
-                          Buyer Bid ({activeBuyer.name})
+                          {hasBuyerBid ? `Buyer Bid (${activeBuyer.name})` : `Buyer Target (${activeBuyer.name})`}
                         </span>
                         <span className="text-sm sm:text-base font-bold font-mono text-blue-600 dark:text-blue-400">
                           ₹{currentBuyerBid.toLocaleString()} <span className="text-[11px] font-normal text-slate-400">/ unit</span>
