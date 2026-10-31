@@ -325,6 +325,12 @@ class ApiClient {
     value: number;
     dueDate?: string;
     type?: "buying" | "selling";
+    stage?: string;
+    location?: string;
+    businessId?: string;
+    quotationId?: string;
+    health?: string;
+    docsSummary?: string;
   }): Promise<{ success: boolean; order: any }> {
     return this.request("/orders", {
       method: "POST",
@@ -332,10 +338,10 @@ class ApiClient {
     });
   }
 
-  async updateOrderStage(id: string, stage: string, health?: string): Promise<{ success: boolean; order: any }> {
+  async updateOrderStage(id: string, stage: string, health?: string, location?: string, docsSummary?: string): Promise<{ success: boolean; order: any }> {
     return this.request(`/orders/${id}/stage`, {
       method: "PUT",
-      body: JSON.stringify({ stage, health }),
+      body: JSON.stringify({ stage, health, location, docsSummary }),
     });
   }
 

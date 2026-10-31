@@ -13,6 +13,7 @@ export const Navbar: React.FC = () => {
   const navItems = [
     { label: "Landing", path: "/" },
     { label: "Sourcing", path: "/sourcing" },
+    { label: "Order Tracking", path: "/sourcing?tab=orders" },
     { label: "Seller Hub", path: "/seller" },
     { label: "Buyer Agents", path: "/agents" },
     { label: "FalkorDB Graph", path: "/graph" },

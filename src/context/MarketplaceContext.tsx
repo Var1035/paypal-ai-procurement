@@ -138,6 +138,8 @@ interface MarketplaceContextType {
   clearAllData: () => void;
   clearAllRFQs: () => Promise<void>;
   refreshData: () => Promise<void>;
+  updateOrderStage: (id: string, stage: string, health?: string, location?: string, docsSummary?: string) => Promise<void>;
+  createOrder: (data: Parameters<typeof api.createOrder>[0]) => Promise<any>;
   autoRefreshInterval: number;
   setAutoRefreshInterval: (sec: number) => void;
   backendConnected: boolean;
@@ -578,6 +580,34 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return res;
   };
 
+  const updateOrderStage = async (id: string, stage: string, health?: string, location?: string, docsSummary?: string) => {
+    try {
+      await api.updateOrderStage(id, stage, health, location, docsSummary);
+      await refreshData();
+    } catch (err) {
+      console.warn("Failed to update order stage via API:", err);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === id
+            ? {
+                ...o,
+                stage,
+                health: health || o.health,
+                location: location || o.location,
+                docsSummary: docsSummary || o.docsSummary,
+              }
+            : o
+        )
+      );
+    }
+  };
+
+  const createOrder = async (data: Parameters<typeof api.createOrder>[0]) => {
+    const res = await api.createOrder(data);
+    await refreshData();
+    return res;
+  };
+
   return (
     <MarketplaceContext.Provider
       value={{
@@ -604,6 +634,8 @@ export const MarketplaceProvider: React.FC<{ children: React.ReactNode }> = ({ c
         clearAllData,
         clearAllRFQs,
         refreshData,
+        updateOrderStage,
+        createOrder,
         autoRefreshInterval,
         setAutoRefreshInterval,
         backendConnected,

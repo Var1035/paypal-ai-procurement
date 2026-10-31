@@ -207,13 +207,44 @@ export async function capturePayPalOrder(params: {
 
     // Update order stage if orderId was provided
     if (params.orderId) {
-      await supabase
+      const { data: updatedOrders } = await supabase
         .from("orders")
         .update({
           stage: "In production",
           health: "On Track",
+          location: "Supplier Factory • Production Floor",
+          docs_summary: `Escrow Paid via PayPal (${captureId})`,
+          updated_at: new Date().toISOString(),
         })
-        .eq("id", params.orderId);
+        .or(`id.eq.${params.orderId},quotation_id.eq.${params.orderId}`)
+        .select();
+
+      // If no order existed yet for this quotation, auto-create it in Supabase
+      if (!updatedOrders || updatedOrders.length === 0) {
+        const { data: quote } = await supabase
+          .from("quotations")
+          .select("*, businesses(name)")
+          .eq("id", params.orderId)
+          .maybeSingle();
+
+        if (quote) {
+          const orderCode = `PO-${Math.floor(1000 + Math.random() * 9000)}`;
+          await supabase.from("orders").insert({
+            order_code: orderCode,
+            quotation_id: quote.id,
+            business_id: quote.business_id,
+            title: `${quote.quantity} Units ${quote.item_name}`,
+            counterparty: quote.buyer_name,
+            value: quote.total_value,
+            stage: "In production",
+            health: "On Track",
+            due_date: new Date(Date.now() + (quote.lead_days || 7) * 86400000).toISOString().split("T")[0],
+            docs_summary: `Escrow Paid via PayPal (${captureId})`,
+            location: "Supplier Factory • Production Floor",
+            type: "buying",
+          });
+        }
+      }
     }
   }
 

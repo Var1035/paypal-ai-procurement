@@ -11,9 +11,11 @@ const OrderCreateSchema = z.object({
   counterparty: z.string().min(2),
   value: z.number().positive(),
   dueDate: z.string().default("In 7 days"),
-  stage: z.string().default("Awaiting Seller Approval"),
+  stage: z.string().default("Awaiting Payment Capture"),
   type: z.enum(["buying", "selling"]).default("buying"),
   location: z.string().default("Bangalore Central Logistics Depot"),
+  health: z.string().default("On Track"),
+  docsSummary: z.string().default("PO issued"),
 });
 
 /**
@@ -101,8 +103,8 @@ ordersRouter.post("/", async (req: Request, res: Response, next: NextFunction) =
         stage: body.stage,
         type: body.type,
         location: body.location,
-        health: "On Track",
-        docs_summary: "PO issued",
+        health: body.health || "On Track",
+        docs_summary: body.docsSummary || "PO issued",
       })
       .select()
       .single();
@@ -117,7 +119,7 @@ ordersRouter.post("/", async (req: Request, res: Response, next: NextFunction) =
 
 /**
  * PUT /api/orders/:id/stage
- * Advance the order along the fulfillment lifecycle
+ * Advance the order along the fulfillment lifecycle (real Supabase update)
  */
 ordersRouter.put("/:id/stage", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -126,13 +128,15 @@ ordersRouter.put("/:id/stage", async (req: Request, res: Response, next: NextFun
     }
 
     const id = req.params.id as string;
-    const { stage, health } = req.body;
+    const { stage, health, location, docsSummary } = req.body;
 
     const { data, error } = await supabase
       .from("orders")
       .update({
         stage,
         ...(health ? { health } : {}),
+        ...(location ? { location } : {}),
+        ...(docsSummary ? { docs_summary: docsSummary } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
