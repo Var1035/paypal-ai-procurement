@@ -51,12 +51,11 @@ export const SellerHubPage: React.FC = () => {
     autoRefreshInterval,
     setAutoRefreshInterval,
     clearAllRFQs,
+    updateOrderStage,
   } = useMarketplace();
 
   const { 
-    activeSeller, 
-    availableSellers, 
-    switchSeller
+    activeSeller
   } = useAuth();
 
   // Navigation within Seller Hub
@@ -368,25 +367,16 @@ export const SellerHubPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Active Seller Business Switcher Dropdown */}
-            {availableSellers.length > 0 && (
-              <div className="pt-1">
-                <label className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block mb-1 font-mono">
-                  ACTIVE BUSINESS TENANT:
-                </label>
-                <select
-                  value={activeSeller?.id || ""}
-                  onChange={(e) => switchSeller(e.target.value)}
-                  className="w-full text-xs font-medium rounded-lg border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-[#111728] px-2 py-1.5 text-slate-800 dark:text-gray-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500"
-                >
-                  {availableSellers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} {s.email ? `(${s.email})` : `(${s.category})`}
-                    </option>
-                  ))}
-                </select>
+            {/* Active Seller Business Tenant Card */}
+            <div className="pt-1">
+              <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block mb-1 font-mono uppercase">
+                Active Supplier Tenant:
+              </span>
+              <div className="w-full text-xs font-bold rounded-xl border border-purple-200 dark:border-purple-500/30 bg-purple-50/60 dark:bg-purple-950/20 px-3 py-2 text-purple-900 dark:text-purple-200 flex items-center justify-between">
+                <span className="truncate">{activeSeller?.name || "Verified Supplier"}</span>
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0 ml-1" />
               </div>
-            )}
+            </div>
           </div>
 
           {/* Navigation Sections */}
@@ -888,16 +878,32 @@ export const SellerHubPage: React.FC = () => {
 
                           {/* Stage Column */}
                           <td className="py-4 px-4">
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                              ord.stage === "Delivered" || ord.stage === "Paid & Confirmed"
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
+                              ord.stage === "Delivered & Settled" || ord.stage === "Delivered" || ord.stage === "Paid & Confirmed"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-                                : ord.stage === "Awaiting Seller Approval"
+                                : ord.stage === "Awaiting Seller Approval" || ord.stage === "Order Submitted"
                                 ? "bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20"
                                 : "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20"
                             }`}>
                               <span className="h-1.5 w-1.5 rounded-full bg-current" />
                               {ord.stage}
                             </span>
+
+                            {/* Seller Stage Advance Selector */}
+                            <select
+                              value={ord.stage}
+                              onChange={(e) => updateOrderStage(ord.id, e.target.value)}
+                              className="mt-1 block text-[10px] font-mono font-medium rounded border border-slate-200 dark:border-gray-700 bg-white dark:bg-[#101626] px-1.5 py-0.5 text-slate-700 dark:text-gray-300 cursor-pointer"
+                              title="Update order lifecycle stage in Supabase"
+                            >
+                              <option value="Order Submitted">Order Submitted</option>
+                              <option value="Seller Approved">Seller Approved</option>
+                              <option value="Payment Escrowed">Payment Escrowed</option>
+                              <option value="In Production">In Production</option>
+                              <option value="QA Inspection">QA Inspection</option>
+                              <option value="In Transport">In Transport</option>
+                              <option value="Delivered & Settled">Delivered & Settled</option>
+                            </select>
                           </td>
 
                           {/* Due Column */}

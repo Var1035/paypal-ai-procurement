@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { AuthNavControls } from "./AuthNavControls";
 
@@ -8,17 +9,27 @@ export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme } = useTheme();
+  const { role } = useAuth();
   const isDark = theme === "dark";
 
-  const navItems = [
-    { label: "Landing", path: "/" },
-    { label: "Sourcing", path: "/sourcing" },
-    { label: "Order Tracking", path: "/sourcing?tab=orders" },
-    { label: "Seller Hub", path: "/seller" },
-    { label: "Buyer Agents", path: "/agents" },
-    { label: "FalkorDB Graph", path: "/graph" },
-    { label: "Workflow", targetId: "how-it-works" },
-  ];
+  const navItems = useMemo(() => {
+    if (role === "seller") {
+      return [
+        { label: "Landing", path: "/" },
+        { label: "Seller Hub", path: "/seller" },
+        { label: "FalkorDB Graph", path: "/graph" },
+        { label: "Workflow", targetId: "how-it-works" },
+      ];
+    }
+    return [
+      { label: "Landing", path: "/" },
+      { label: "Sourcing", path: "/sourcing" },
+      { label: "Order Tracking", path: "/sourcing?tab=orders" },
+      { label: "Buyer Agents", path: "/agents" },
+      { label: "FalkorDB Graph", path: "/graph" },
+      { label: "Workflow", targetId: "how-it-works" },
+    ];
+  }, [role]);
 
   const handleNavClick = (item: { label: string; path?: string; targetId?: string }) => {
     if (item.path) {

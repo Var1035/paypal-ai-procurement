@@ -204,7 +204,6 @@ export const AISourcingPage: React.FC = () => {
     orders,
     refreshData,
     clearAllRFQs,
-    updateOrderStage,
     createOrder
   } = useMarketplace();
 
@@ -329,7 +328,6 @@ export const AISourcingPage: React.FC = () => {
 
   // Order Tracking Filter & Mutation State
   const [orderStageFilter, setOrderStageFilter] = useState<string>("all");
-  const [isUpdatingOrder, setIsUpdatingOrder] = useState<string | null>(null);
   const [isCreatingSampleOrder, setIsCreatingSampleOrder] = useState<boolean>(false);
 
   const stageFilteredOrders = useMemo(() => {
@@ -363,35 +361,6 @@ export const AISourcingPage: React.FC = () => {
       console.warn("Failed to create sample order:", err);
     } finally {
       setIsCreatingSampleOrder(false);
-    }
-  };
-
-  const STAGE_DEFAULTS: Record<number, { stage: string; location: string; docs: string }> = {
-    0: { stage: "Order Submitted", location: "Buyer Procurement Portal", docs: "Draft Purchase Order Registered in Supabase" },
-    1: { stage: "Seller Approved", location: "Seller Commercial Desk", docs: "Commercial Terms Signed off by Both Agents" },
-    2: { stage: "Payment Escrowed", location: "PayPal Sandbox Escrow Vault", docs: "Secured via PayPal Sandbox Escrow Vault" },
-    3: { stage: "In Production", location: "Supplier Factory • Production Floor", docs: "Batch Fabrication Active • Assembly Line 2" },
-    4: { stage: "QA Inspection", location: "Quality Inspection Bay 3", docs: "QA Compliance ISO-9001:2015 Verified" },
-    5: { stage: "In Transport", location: "Bangalore - Mumbai NH-48 Freight Transit Corridor", docs: "Dispatched via BlueDart Express Waybill #BD-9218-X4" },
-    6: { stage: "Delivered & Settled", location: "Buyer Central Warehouse • Dock Bay 4", docs: "Proof of Delivery Signed • Escrow Released" },
-  };
-
-  const handleAdvanceOrder = async (ord: any, nextStage: string, nextLoc?: string, nextDocs?: string) => {
-    setIsUpdatingOrder(ord.id);
-    try {
-      const stageIdx = getOrderStageIndex(nextStage);
-      const defaults = STAGE_DEFAULTS[stageIdx] || STAGE_DEFAULTS[0];
-      await updateOrderStage(
-        ord.id,
-        nextStage,
-        "On Track",
-        nextLoc || defaults.location,
-        nextDocs || defaults.docs
-      );
-    } catch (err) {
-      console.warn("Failed to advance order:", err);
-    } finally {
-      setIsUpdatingOrder(null);
     }
   };
 
@@ -1749,8 +1718,6 @@ export const AISourcingPage: React.FC = () => {
               <div className="space-y-6">
                 {stageFilteredOrders.map((ord) => {
                   const currentStageIdx = getOrderStageIndex(ord.stage);
-                  const isUpdatingThis = isUpdatingOrder === ord.id;
-                  const isDelivered = currentStageIdx === 6;
 
                   return (
                     <div
@@ -1895,37 +1862,15 @@ export const AISourcingPage: React.FC = () => {
 
                       {/* CONTROLLER & ACTION BUTTONS */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-[#1A2236]">
-                        {/* Live Supabase Stage Advancer */}
-                        <div className="flex flex-wrap items-center gap-2">
+                        {/* Buyer Order Status Tracker (Read-only live tracking) */}
+                        <div className="flex items-center gap-2">
                           <span className="text-xs font-mono text-slate-500 dark:text-gray-400 font-bold">
-                            Update Stage:
+                            Live Fulfillment Status:
                           </span>
-                          <select
-                            value={ord.stage}
-                            disabled={isUpdatingThis}
-                            onChange={(e) => handleAdvanceOrder(ord, e.target.value)}
-                            className="bg-white dark:bg-[#151D30] border border-slate-300 dark:border-gray-700 rounded-lg px-2.5 py-1 text-xs font-mono font-semibold text-slate-800 dark:text-gray-200 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
-                          >
-                            {ORDER_LIFECYCLE_STAGES.map((s) => (
-                              <option key={s.id} value={s.label}>
-                                {s.label}
-                              </option>
-                            ))}
-                          </select>
-
-                          {!isDelivered && (
-                            <button
-                              onClick={() => {
-                                const nextStageObj = ORDER_LIFECYCLE_STAGES[currentStageIdx + 1];
-                                if (nextStageObj) handleAdvanceOrder(ord, nextStageObj.label);
-                              }}
-                              disabled={isUpdatingThis}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                            >
-                              <span>{isUpdatingThis ? "Updating Supabase..." : "Advance to Next Stage"}</span>
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-500/30 font-mono text-xs font-semibold">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            {ord.stage}
+                          </span>
                         </div>
 
                         {/* Payment & Inspection actions */}

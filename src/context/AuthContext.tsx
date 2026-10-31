@@ -41,7 +41,13 @@ interface AuthContextType {
   availableBuyers: ActiveBuyerProfile[];
 
   // Auth Operations (email + password)
-  signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUpWithEmail: (
+    email: string, 
+    password: string, 
+    fullName: string, 
+    accountRole: UserRole, 
+    companyName?: string
+  ) => Promise<{ error: Error | null }>;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   loginDemoPersona: (role: UserRole, idOrName: string) => void;
@@ -148,24 +154,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(initialSession?.user ?? null);
           if (initialSession?.user) {
             const meta = initialSession.user.user_metadata;
-            if (meta?.full_name || initialSession.user.email) {
-              setActiveBuyer({
-                id: initialSession.user.id,
-                name: meta.full_name || initialSession.user.email?.split("@")[0] || "Authenticated Buyer",
-                email: initialSession.user.email || "buyer@domain.com",
-                organization: "Verified Enterprise",
-              });
-            }
+            const userRole: UserRole = meta?.role === "seller" ? "seller" : "buyer";
+            setRole(userRole);
+            localStorage.setItem("agentmarket_user_role", userRole);
 
-            // If user email matches a seller tenant, auto-activate that seller
-            const userEmail = initialSession.user.email?.toLowerCase();
-            const pool = availableSellersRef.current;
-            if (userEmail && pool.length > 0) {
+            if (userRole === "seller") {
+              const company = meta?.company_name || meta?.full_name || initialSession.user.email?.split("@")[0] || "My Supplier Business";
+              const userEmail = initialSession.user.email?.toLowerCase();
+              const pool = availableSellersRef.current;
               const matchedSeller = pool.find((s) => s.email?.toLowerCase() === userEmail);
               if (matchedSeller) {
                 setActiveSeller(matchedSeller);
                 localStorage.setItem("agentmarket_active_seller_id", matchedSeller.id);
+              } else {
+                const sObj: ActiveSellerBusiness = {
+                  id: initialSession.user.id,
+                  name: company,
+                  category: "Commercial Supplier",
+                  email: initialSession.user.email || "",
+                  isVerified: true
+                };
+                setActiveSeller(sObj);
+                localStorage.setItem("agentmarket_active_seller_id", sObj.id);
               }
+            } else {
+              setActiveBuyer({
+                id: initialSession.user.id,
+                name: meta?.full_name || initialSession.user.email?.split("@")[0] || "Authenticated Buyer",
+                email: initialSession.user.email || "buyer@domain.com",
+                organization: meta?.company_name || "Enterprise Procurement",
+              });
             }
           }
         }
@@ -184,21 +202,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentSession?.user ?? null);
       if (currentSession?.user) {
         const meta = currentSession.user.user_metadata;
-        setActiveBuyer({
-          id: currentSession.user.id,
-          name: meta?.full_name || currentSession.user.email?.split("@")[0] || "Authenticated Buyer",
-          email: currentSession.user.email || "buyer@domain.com",
-          organization: "Verified Enterprise",
-        });
+        const userRole: UserRole = meta?.role === "seller" ? "seller" : "buyer";
+        setRole(userRole);
+        localStorage.setItem("agentmarket_user_role", userRole);
 
-        const userEmail = currentSession.user.email?.toLowerCase();
-        const pool = availableSellersRef.current;
-        if (userEmail && pool.length > 0) {
+        if (userRole === "seller") {
+          const company = meta?.company_name || meta?.full_name || currentSession.user.email?.split("@")[0] || "My Supplier Business";
+          const userEmail = currentSession.user.email?.toLowerCase();
+          const pool = availableSellersRef.current;
           const matchedSeller = pool.find((s) => s.email?.toLowerCase() === userEmail);
           if (matchedSeller) {
             setActiveSeller(matchedSeller);
             localStorage.setItem("agentmarket_active_seller_id", matchedSeller.id);
+          } else {
+            const sObj: ActiveSellerBusiness = {
+              id: currentSession.user.id,
+              name: company,
+              category: "Commercial Supplier",
+              email: currentSession.user.email || "",
+              isVerified: true
+            };
+            setActiveSeller(sObj);
+            localStorage.setItem("agentmarket_active_seller_id", sObj.id);
           }
+        } else {
+          setActiveBuyer({
+            id: currentSession.user.id,
+            name: meta?.full_name || currentSession.user.email?.split("@")[0] || "Authenticated Buyer",
+            email: currentSession.user.email || "buyer@domain.com",
+            organization: meta?.company_name || "Enterprise Procurement",
+          });
         }
       }
     });
@@ -230,16 +263,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUpWithEmail = async (email: string, password: string, fullName: string): Promise<{ error: Error | null }> => {
+  const signUpWithEmail = async (
+    email: string, 
+    password: string, 
+    fullName: string,
+    accountRole: UserRole,
+    companyName?: string
+  ): Promise<{ error: Error | null }> => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { full_name: fullName },
+          data: { 
+            full_name: fullName,
+            role: accountRole,
+            company_name: companyName || fullName
+          },
         },
       });
-      return { error: error ? new Error(error.message) : null };
+
+      if (error) {
+        return { error: new Error(error.message) };
+      }
+
+      // Persist chosen role immediately
+      switchRole(accountRole);
+
+      if (accountRole === "seller") {
+        const businessName = companyName || fullName;
+        // Register seller in business directory
+        try {
+          await api.registerSupplier({
+            name: businessName,
+            email: email,
+            category: "Commercial & Institutional Furniture",
+          });
+        } catch (regErr) {
+          console.warn("Supplier auto-registration notice:", regErr);
+        }
+
+        const newSeller: ActiveSellerBusiness = {
+          id: data.user?.id || `seller-${Date.now()}`,
+          name: businessName,
+          category: "Commercial & Institutional Furniture",
+          email: email,
+          isVerified: true
+        };
+        setActiveSeller(newSeller);
+        localStorage.setItem("agentmarket_active_seller_id", newSeller.id);
+      } else {
+        const newBuyer: ActiveBuyerProfile = {
+          id: data.user?.id || `buyer-${Date.now()}`,
+          name: fullName,
+          email: email,
+          organization: companyName || "Enterprise Procurement",
+        };
+        setActiveBuyer(newBuyer);
+        localStorage.setItem("agentmarket_active_buyer", JSON.stringify(newBuyer));
+      }
+
+      return { error: null };
     } catch (err: any) {
       return { error: err instanceof Error ? err : new Error("Failed to create account") };
     }
