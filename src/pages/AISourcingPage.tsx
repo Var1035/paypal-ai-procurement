@@ -17,7 +17,6 @@ import {
   Sparkles,
   RefreshCw,
   Clock,
-  LogIn,
   MessageSquare,
   Layers,
   CreditCard,
@@ -181,8 +180,7 @@ export const AISourcingPage: React.FC = () => {
 
   const { 
     activeBuyer, 
-    user,
-    signInWithGoogle 
+    user
   } = useAuth();
 
   const orbRef = useRef<MorphOrbHandle>(null);
@@ -215,13 +213,17 @@ export const AISourcingPage: React.FC = () => {
   const stopNegotiationRef = useRef<boolean>(false);
   const [isStopped, setIsStopped] = useState<boolean>(false);
   const [negotiationStatusText, setNegotiationStatusText] = useState<string>("");
+  const [typingAgent, setTypingAgent] = useState<"buyer" | "supplier" | null>(null);
   const negotiationScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (negotiationScrollRef.current) {
-      negotiationScrollRef.current.scrollTop = negotiationScrollRef.current.scrollHeight;
+      negotiationScrollRef.current.scrollTo({
+        top: negotiationScrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
-  }, [negotiationTranscript, isNegotiating]);
+  }, [negotiationTranscript, isNegotiating, typingAgent]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -237,7 +239,8 @@ export const AISourcingPage: React.FC = () => {
     stopNegotiationRef.current = true;
     setIsStopped(true);
     setIsNegotiating(false);
-    setNegotiationStatusText(`Negotiation halted at Round ${negotiationRound}. Terms locked.`);
+    setTypingAgent(null);
+    setNegotiationStatusText(`Negotiation paused at Round ${negotiationRound}. Terms locked.`);
   };
 
   const [inspectingQuote, setInspectingQuote] = useState<{
@@ -438,7 +441,8 @@ export const AISourcingPage: React.FC = () => {
     setIsNegotiating(true);
     setNegotiationError(null);
     setNegotiationTranscript([]);
-    setNegotiationStatusText("Initiating negotiation session with verified supplier agent...");
+    setTypingAgent("buyer");
+    setNegotiationStatusText("Initiating autonomous negotiation between DeepSeek-R1 and Qwen 2.5...");
 
     try {
       const res = await initiateNegotiation({
@@ -466,53 +470,65 @@ export const AISourcingPage: React.FC = () => {
           if (stopNegotiationRef.current) break;
 
           setNegotiationRound(r);
-          setNegotiationStatusText(`Round ${r} in Progress: Formulating buyer proposal...`);
-
           const roundMessages = mappedTranscript.filter((m: any) => m.round === r);
           const buyerMsg = roundMessages.find((m: any) => m.sender === "buyer_agent");
           const supplierMsg = roundMessages.find((m: any) => m.sender === "supplier_agent");
           const safeguardMsg = roundMessages.find((m: any) => m.sender === "safeguard");
 
+          // 1. Buyer Turn with Typing Indicator
           if (buyerMsg) {
+            setTypingAgent("buyer");
+            setNegotiationStatusText(`Round ${r}: Buyer Agent is evaluating budget & volume targets...`);
+            await new Promise((resolve) => setTimeout(resolve, 850));
+            if (stopNegotiationRef.current) break;
+
             accumulated = [...accumulated, buyerMsg];
             setNegotiationTranscript([...accumulated]);
-            setNegotiationStatusText(`Round ${r} in Progress: Evaluating pricing & terms...`);
+            setTypingAgent(null);
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            if (stopNegotiationRef.current) break;
+          }
+
+          // 2. Supplier Turn with Typing Indicator
+          if (supplierMsg) {
+            setTypingAgent("supplier");
+            setNegotiationStatusText(`Round ${r}: ${product.businessName} Agent is checking catalog margins via FalkorDB...`);
             await new Promise((resolve) => setTimeout(resolve, 900));
             if (stopNegotiationRef.current) break;
-          }
 
-          if (supplierMsg) {
             accumulated = [...accumulated, supplierMsg];
             setNegotiationTranscript([...accumulated]);
-            setNegotiationStatusText(`Round ${r} Complete: Concession terms analyzed.`);
-            await new Promise((resolve) => setTimeout(resolve, 700));
+            setTypingAgent(null);
+            await new Promise((resolve) => setTimeout(resolve, 400));
             if (stopNegotiationRef.current) break;
           }
 
+          // 3. Safeguard Turn
           if (safeguardMsg) {
             accumulated = [...accumulated, safeguardMsg];
             setNegotiationTranscript([...accumulated]);
+            await new Promise((resolve) => setTimeout(resolve, 250));
           }
         }
 
         if (!stopNegotiationRef.current) {
           setNegotiationRound(res.roundCount || rounds.length);
           setNegotiationSubmitted(true);
-          setNegotiationStatusText(`Multi-agent price convergence achieved in Round ${res.roundCount || rounds.length}. Final quotation locked.`);
+          setNegotiationStatusText(`Consensus reached in Round ${res.roundCount || rounds.length}! Final terms locked.`);
         }
       }
     } catch (err: any) {
       console.warn("Live multi-agent negotiation error:", err);
       setNegotiationError(err?.message || "Failed to initiate live negotiation");
     } finally {
+      setTypingAgent(null);
       setIsNegotiating(false);
     }
   };
 
-  const handleSendCounteroffer = () => {
+  const handleSendCounteroffer = async () => {
     if (!negotiationActive) return;
 
-    // Manual local counteroffer fallback
     const nextRound = negotiationRound + 1;
     const counterBuyer = Math.round(targetBudget * (0.97 - nextRound * 0.01));
     const supplierCounter = Math.max(
@@ -521,21 +537,39 @@ export const AISourcingPage: React.FC = () => {
     );
 
     setNegotiationRound(nextRound);
-    setNegotiationTranscript((prev) => [
-      ...prev,
-      {
-        sender: "buyer_agent",
-        round: nextRound,
-        price: counterBuyer,
-        text: `Round ${nextRound} counteroffer by ${activeBuyer.name}: ₹${counterBuyer.toLocaleString()} / unit. Citing market benchmarks and volume discount justification.`,
-      },
-      {
-        sender: "supplier_agent",
-        round: nextRound,
-        price: supplierCounter,
-        text: `Round ${nextRound} supplier response: Adjusted to ₹${supplierCounter.toLocaleString()} / unit. Fulfillment guaranteed within ${negotiationActive.leadDays} days.`,
-      },
-    ]);
+    setIsNegotiating(true);
+
+    // Simulate Buyer Typing
+    setTypingAgent("buyer");
+    setNegotiationStatusText(`Round ${nextRound}: Buyer Agent proposing counter-bid ₹${counterBuyer.toLocaleString()}...`);
+    await new Promise((r) => setTimeout(r, 700));
+
+    const newBuyerMsg = {
+      sender: "buyer_agent" as const,
+      round: nextRound,
+      price: counterBuyer,
+      text: `Round ${nextRound} counteroffer by ${activeBuyer.name}: ₹${counterBuyer.toLocaleString()} / unit. Volume discount justified by ${targetQuantity} units order size.`,
+    };
+
+    setNegotiationTranscript((prev) => [...prev, newBuyerMsg]);
+    setTypingAgent(null);
+    await new Promise((r) => setTimeout(r, 350));
+
+    // Simulate Supplier Typing
+    setTypingAgent("supplier");
+    setNegotiationStatusText(`Round ${nextRound}: ${negotiationActive.businessName} analyzing counter against floor price...`);
+    await new Promise((r) => setTimeout(r, 800));
+
+    const newSupplierMsg = {
+      sender: "supplier_agent" as const,
+      round: nextRound,
+      price: supplierCounter,
+      text: `Round ${nextRound} supplier response: Adjusted to ₹${supplierCounter.toLocaleString()} / unit. Guaranteed fulfillment within ${negotiationActive.leadDays} days.`,
+    };
+
+    setNegotiationTranscript((prev) => [...prev, newSupplierMsg]);
+    setTypingAgent(null);
+    setIsNegotiating(false);
 
     // Check for convergence
     const gap = Math.abs(counterBuyer - supplierCounter);
@@ -551,10 +585,11 @@ export const AISourcingPage: React.FC = () => {
           sender: "safeguard",
           round: nextRound,
           price: finalPrice,
-          text: `Deal converged at ₹${finalPrice.toLocaleString()} / unit after ${nextRound} rounds (${gapPercent.toFixed(1)}% gap). Quotation generated for ${activeBuyer.name}. Pending human approval on ${negotiationActive.businessName} Seller Dashboard.`,
+          text: `Consensus Achieved: Price converged at ₹${finalPrice.toLocaleString()} / unit (${gapPercent.toFixed(1)}% spread). Quotation generated and submitted to ${negotiationActive.businessName} Seller Hub for human confirmation.`,
         },
       ]);
       setNegotiationSubmitted(true);
+      setNegotiationStatusText(`Agreement converged at Round ${nextRound}!`);
     }
   };
 
@@ -592,19 +627,16 @@ export const AISourcingPage: React.FC = () => {
               <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/60 dark:bg-[#11182A] px-4 py-2 text-left shadow-2xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-gray-400 font-mono">
-                    AUTHENTICATED BUYER:
+                    ACTIVE BUYER:
                   </span>
                   {user ? (
-                    <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded">
-                      Google OAuth Verified
+                    <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                      Account Verified
                     </span>
                   ) : (
-                    <button
-                      onClick={() => signInWithGoogle()}
-                      className="text-[9px] font-mono text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <LogIn className="h-2.5 w-2.5" /> Sign In Google
-                    </button>
+                    <span className="text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                      Guest Session
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
@@ -1504,362 +1536,614 @@ export const AISourcingPage: React.FC = () => {
       {/* ============================================================== */}
       {/* Interactive Negotiation Room Modal (Full Screen Workstation) */}
       {/* ============================================================== */}
-      {negotiationActive && (
-        <div className="fixed inset-0 z-50 flex flex-col w-screen h-screen bg-white dark:bg-[#070B16] overflow-hidden animate-in fade-in duration-150">
-          
-          {/* Full Screen Top Header Bar */}
-          <div className="border-b border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-3.5 flex items-center justify-between shrink-0 shadow-xs">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-600/20 border border-blue-200 dark:border-blue-500/40 text-blue-600 dark:text-blue-400 shadow-xs">
-                <Bot className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                    Agent-to-Agent Negotiation Room
-                  </h3>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">
-                    Round {negotiationRound}
-                  </span>
+      {negotiationActive && (() => {
+        const latestBuyerMsg = negotiationTranscript.filter((m) => m.sender === "buyer_agent").slice(-1)[0];
+        const latestSellerMsg = negotiationTranscript.filter((m) => m.sender === "supplier_agent").slice(-1)[0];
+        const currentBuyerBid = latestBuyerMsg?.price || Math.round(targetBudget / (targetQuantity || 1));
+        const currentSellerOffer = latestSellerMsg?.price || negotiationActive.basePrice;
+        const currentAgreedPrice = negotiationTranscript[negotiationTranscript.length - 1]?.price || currentSellerOffer;
+        const spreadGap = Math.abs(currentSellerOffer - currentBuyerBid);
+        const spreadGapPercent = currentSellerOffer > 0 ? ((spreadGap / currentSellerOffer) * 100).toFixed(1) : "0";
+        const totalContractValue = currentAgreedPrice * targetQuantity;
+        const catalogTotalValue = negotiationActive.basePrice * targetQuantity;
+        const totalSavings = Math.max(0, catalogTotalValue - totalContractValue);
+        const savingsPercent = catalogTotalValue > 0 ? ((totalSavings / catalogTotalValue) * 100).toFixed(1) : "0";
+
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col w-screen h-screen bg-white dark:bg-[#070B16] overflow-hidden animate-in fade-in duration-150">
+            
+            {/* Top Header Bar */}
+            <div className="border-b border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-3.5 flex items-center justify-between shrink-0 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
+                  <Bot className="h-5 w-5" />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
-                  <span>Buyer Agent ({activeBuyer.name})</span>
-                  <span>⟷</span>
-                  <span>{negotiationActive.businessName} Agent</span>
-                  <span>• {targetQuantity} Units</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              {isNegotiating && (
-                <button
-                  type="button"
-                  onClick={handleStopNegotiation}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs shadow-sm transition-all cursor-pointer animate-pulse"
-                  title="Stop autonomous negotiation at current round"
-                >
-                  <Square className="h-3 w-3 fill-current" />
-                  <span>Stop Round</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => setNegotiationActive(null)}
-                className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-[#111728] hover:bg-slate-100 dark:hover:bg-[#182035] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-300 transition-colors cursor-pointer"
-                title="Exit Full Screen Negotiation Room (Esc)"
-              >
-                <X className="h-4 w-4" />
-                <span className="hidden sm:inline">Close</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Subheader / Mode Switcher Bar */}
-          <div className="px-6 sm:px-8 py-2.5 border-b border-slate-200 dark:border-[#182033] bg-slate-100/70 dark:bg-[#0B1123] flex items-center justify-between gap-3 overflow-x-auto shrink-0">
-            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/60 dark:bg-[#131B32] border border-slate-300/40 dark:border-gray-800">
-              <button
-                onClick={() => setNegotiationViewTab("chat")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  negotiationViewTab === "chat"
-                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                <span>Live Chat Preview</span>
-                {isNegotiating && <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
-              </button>
-
-              <button
-                onClick={() => setNegotiationViewTab("detailed")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  negotiationViewTab === "detailed"
-                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                <span>Detailed View & Specs</span>
-              </button>
-
-              <button
-                onClick={() => setNegotiationViewTab("protocol")}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  negotiationViewTab === "protocol"
-                    ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
-                    : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Layers className="h-3.5 w-3.5" />
-                <span>Protocol Log</span>
-              </button>
-            </div>
-
-            <div className="text-[11px] font-mono text-slate-500 dark:text-gray-400 hidden sm:flex items-center gap-3">
-              <span>
-                Ollama: <strong className="text-blue-600 dark:text-blue-400">DeepSeek-R1 (14B)</strong> vs <strong className="text-purple-600 dark:text-purple-400">Qwen 2.5 (14B)</strong>
-              </span>
-              <span>•</span>
-              <span>
-                Item: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.name}</strong>
-              </span>
-            </div>
-          </div>
-
-          {/* Full Screen Scrollable Body Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50 dark:bg-[#070B16]" ref={negotiationScrollRef}>
-            <div className="max-w-4xl mx-auto space-y-4">
-              
-              {/* Active LLM Inference Banner & Live Round Status */}
-              {isNegotiating ? (
-                <div className="rounded-xl border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-950/40 p-4 flex items-center justify-between gap-3 animate-pulse shadow-xs">
-                  <div className="flex items-center gap-3">
-                    <Bot className="h-5 w-5 text-blue-600 animate-spin shrink-0" />
-                    <div>
-                      <span className="text-xs font-bold text-blue-900 dark:text-blue-300 block font-mono">
-                        Round {negotiationRound} in Progress...
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                      Autonomous Negotiation Workstation
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">
+                      Round {negotiationRound}
+                    </span>
+                    {negotiationSubmitted && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Consensus Reached
                       </span>
-                      <p className="text-[11px] text-blue-700 dark:text-blue-400 mt-0.5">
-                        {negotiationStatusText || `Autonomous multi-agent deliberation: DeepSeek-R1 ⟷ Qwen 2.5`}
-                      </p>
-                    </div>
+                    )}
                   </div>
+                  <p className="text-xs text-slate-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
+                    <span>Buyer Agent ({activeBuyer.name})</span>
+                    <span>⟷</span>
+                    <span>{negotiationActive.businessName} Agent</span>
+                    <span>• {targetQuantity} Units of {negotiationActive.name}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {isNegotiating ? (
                   <button
                     type="button"
                     onClick={handleStopNegotiation}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-600/60 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold text-xs transition-all cursor-pointer"
+                    title="Pause negotiation to inspect or manually steer"
                   >
-                    <Square className="h-3 w-3 fill-current" />
-                    <span>Stop Round</span>
+                    <Square className="h-3 w-3 fill-current text-amber-600 dark:text-amber-400" />
+                    <span>Pause</span>
                   </button>
-                </div>
-              ) : isStopped ? (
-                <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300">
-                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>
-                      <strong>Negotiation Paused at Round {negotiationRound}.</strong> Current offer: ₹{negotiationTranscript[negotiationTranscript.length - 1]?.price?.toLocaleString() || "..."}/unit.
+                ) : isStopped && !negotiationSubmitted ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsStopped(false);
+                      handleSendCounteroffer();
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-sm transition-all cursor-pointer"
+                  >
+                    <span>Resume</span>
+                  </button>
+                ) : null}
+
+                <button
+                  onClick={() => setNegotiationActive(null)}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-[#111728] hover:bg-slate-100 dark:hover:bg-[#182035] px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-gray-300 transition-colors cursor-pointer"
+                  title="Exit Full Screen Negotiation Room (Esc)"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="hidden sm:inline">Close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Subheader / Mode Switcher Bar */}
+            <div className="px-6 sm:px-8 py-2.5 border-b border-slate-200 dark:border-[#182033] bg-slate-100/70 dark:bg-[#0B1123] flex items-center justify-between gap-3 overflow-x-auto shrink-0">
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/60 dark:bg-[#131B32] border border-slate-300/40 dark:border-gray-800">
+                <button
+                  onClick={() => setNegotiationViewTab("chat")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    negotiationViewTab === "chat"
+                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  <span>Live Dialogue</span>
+                  {isNegotiating && <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
+                </button>
+
+                <button
+                  onClick={() => setNegotiationViewTab("detailed")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    negotiationViewTab === "detailed"
+                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>Specifications & Terms</span>
+                </button>
+
+                <button
+                  onClick={() => setNegotiationViewTab("protocol")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    negotiationViewTab === "protocol"
+                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/30"
+                      : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>Protocol & Reasoning</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] font-mono text-slate-500 dark:text-gray-400 hidden sm:flex items-center gap-3">
+                <span>
+                  Ollama: <strong className="text-blue-600 dark:text-blue-400">DeepSeek-R1 (14B)</strong> ⟷ <strong className="text-purple-600 dark:text-purple-400">Qwen 2.5 (14B)</strong>
+                </span>
+                <span>•</span>
+                <span>
+                  FalkorDB: <strong className="text-emerald-600 dark:text-emerald-400">Graph Memory Active</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Scrollable Workstation Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50 dark:bg-[#070B16]" ref={negotiationScrollRef}>
+              <div className="max-w-4xl mx-auto space-y-4">
+
+                {/* Real-Time Price Convergence Meter */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-[#0D1424] p-4 shadow-xs">
+                  <div className="flex items-center justify-between text-xs font-mono mb-2">
+                    <span className="text-slate-500 dark:text-gray-400 uppercase text-[10px] tracking-wider">
+                      Price Convergence Spread Tracker
+                    </span>
+                    <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                      negotiationSubmitted
+                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                        : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                    }`}>
+                      {negotiationSubmitted ? "100% Agreement Reached" : `Spread Gap: ₹${spreadGap.toLocaleString()} (${spreadGapPercent}%)`}
                     </span>
                   </div>
-                  <button
-                    onClick={() => setNegotiationSubmitted(true)}
-                    className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shrink-0 cursor-pointer"
-                  >
-                    Lock In & Submit
-                  </button>
-                </div>
-              ) : null}
 
-              {negotiationError && (
-                <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-300">
-                  <p><strong>Notice:</strong> {negotiationError}. Fallback bounding active.</p>
-                </div>
-              )}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-3 pt-1">
+                    {/* Buyer Bid */}
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                        <MaterialIcon name="school" size={18} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400 uppercase block">
+                          Buyer Bid ({activeBuyer.name})
+                        </span>
+                        <span className="text-sm sm:text-base font-bold font-mono text-blue-600 dark:text-blue-400">
+                          ₹{currentBuyerBid.toLocaleString()} <span className="text-[11px] font-normal text-slate-400">/ unit</span>
+                        </span>
+                      </div>
+                    </div>
 
-              {/* 1. CHATTING STYLE (Buyer & Seller Dialogue) */}
-              {negotiationViewTab === "chat" && (
-                <div className="space-y-4">
-                  <div className="space-y-3.5 pt-1">
-                    {negotiationTranscript.map((msg, idx) => {
-                      if (msg.sender === "safeguard") {
+                    {/* Progress Bar */}
+                    <div className="px-2">
+                      <div className="h-2.5 w-full bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/60 dark:border-gray-800">
+                        <div 
+                          className={`h-full transition-all duration-700 rounded-full ${
+                            negotiationSubmitted 
+                              ? "bg-emerald-500 shadow-sm shadow-emerald-500/50" 
+                              : "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
+                          }`} 
+                          style={{ 
+                            width: negotiationSubmitted ? "100%" : `${Math.min(95, Math.max(15, 100 - parseFloat(spreadGapPercent) * 4))}%` 
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[9px] font-mono text-slate-400 mt-1">
+                        <span>Opening Bid</span>
+                        <span className="text-slate-500 dark:text-gray-400 font-semibold">
+                          {negotiationSubmitted ? "Consensus" : `Targeting Midpoint`}
+                        </span>
+                        <span>Catalog Base</span>
+                      </div>
+                    </div>
+
+                    {/* Seller Offer */}
+                    <div className="flex items-center justify-end gap-2.5 text-right">
+                      <div>
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400 uppercase block">
+                          Seller Offer ({negotiationActive.businessName})
+                        </span>
+                        <span className="text-sm sm:text-base font-bold font-mono text-purple-600 dark:text-purple-400">
+                          ₹{currentSellerOffer.toLocaleString()} <span className="text-[11px] font-normal text-slate-400">/ unit</span>
+                        </span>
+                      </div>
+                      <div className="h-9 w-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                        <MaterialIcon name="domain" size={18} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Paused State Notice */}
+                {isStopped && !negotiationSubmitted && (
+                  <div className="rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 p-3.5 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300">
+                      <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>
+                        <strong>Negotiation Paused at Round {negotiationRound}.</strong> Current proposal: ₹{currentAgreedPrice.toLocaleString()} / unit.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setNegotiationSubmitted(true)}
+                      className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shrink-0 cursor-pointer shadow-xs"
+                    >
+                      Lock In & Submit
+                    </button>
+                  </div>
+                )}
+
+                {/* Error Banner */}
+                {negotiationError && (
+                  <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-300">
+                    <p><strong>Notice:</strong> {negotiationError}. Fallback bounding active.</p>
+                  </div>
+                )}
+
+                {/* TAB 1: LIVE DIALOGUE VIEW */}
+                {negotiationViewTab === "chat" && (
+                  <div className="space-y-4">
+                    {/* Status Pill */}
+                    {isNegotiating && (
+                      <div className="flex justify-center">
+                        <div className="inline-flex items-center gap-2 rounded-full px-4 py-1 text-xs font-mono text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 animate-pulse">
+                          <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping" />
+                          <span>{negotiationStatusText || `Round ${negotiationRound} in Progress...`}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-3.5 pt-1">
+                      {negotiationTranscript.map((msg, idx) => {
+                        if (msg.sender === "safeguard") {
+                          return (
+                            <div key={idx} className="flex justify-center my-3">
+                              <div className="flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-mono font-medium border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 shadow-xs">
+                                <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>{cleanHumanChatText(msg.text)}</span>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const isBuyer = msg.sender === "buyer_agent";
+
                         return (
-                          <div key={idx} className="flex justify-center my-3">
-                            <div className="flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-mono font-medium border border-emerald-300/60 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 shadow-xs">
-                              <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              <span>{cleanHumanChatText(msg.text)}</span>
+                          <div 
+                            key={idx} 
+                            className={`flex flex-col ${isBuyer ? "items-start" : "items-end"} gap-1`}
+                          >
+                            <div className="flex items-center gap-1.5 px-2 text-[10px] font-mono text-slate-500 dark:text-gray-400 uppercase">
+                              <span className="font-bold flex items-center gap-1">
+                                {isBuyer ? (
+                                  <>
+                                    <MaterialIcon name="school" size={13} className="text-blue-500" />
+                                    <span>{activeBuyer.name} Agent (DeepSeek-R1)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <MaterialIcon name="domain" size={13} className="text-purple-500" />
+                                    <span>{negotiationActive.businessName} Agent (Qwen 2.5)</span>
+                                  </>
+                                )}
+                              </span>
+                              <span>• Round {msg.round}</span>
+                            </div>
+
+                            <div
+                              className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-xs leading-relaxed shadow-xs transition-all ${
+                                isBuyer
+                                  ? "bg-blue-50/80 dark:bg-[#111A33] border border-blue-200 dark:border-blue-500/30 text-slate-900 dark:text-blue-100 rounded-tl-sm"
+                                  : "bg-purple-50/80 dark:bg-[#1A1430] border border-purple-200 dark:border-purple-500/30 text-slate-900 dark:text-purple-100 rounded-tr-sm"
+                              }`}
+                            >
+                              <p className="text-[13px] leading-relaxed">{cleanHumanChatText(msg.text)}</p>
+
+                              <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-white/10 flex items-center justify-between text-[11px] font-mono">
+                                <span className="opacity-75">
+                                  {isBuyer ? "Proposed Bid:" : "Counter-Offer:"}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`font-bold px-2 py-0.5 rounded ${
+                                    isBuyer 
+                                      ? "bg-blue-600/10 text-blue-700 dark:text-blue-300"
+                                      : "bg-purple-600/10 text-purple-700 dark:text-purple-300"
+                                  }`}>
+                                    ₹{msg.price.toLocaleString()} / unit
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 dark:text-gray-500 hidden sm:inline">
+                                    (Batch: ₹{(msg.price * targetQuantity).toLocaleString()})
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );
-                      }
+                      })}
 
-                      const isBuyer = msg.sender === "buyer_agent";
-
-                      return (
-                        <div 
-                          key={idx} 
-                          className={`flex flex-col ${isBuyer ? "items-start" : "items-end"} gap-1`}
-                        >
-                          <div className="flex items-center gap-1.5 px-2 text-[10px] font-mono text-slate-500 dark:text-gray-400 uppercase">
+                      {/* Smooth Active Typing Indicator */}
+                      {typingAgent === "buyer" && (
+                        <div className="flex flex-col items-start gap-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <div className="flex items-center gap-1.5 px-2 text-[10px] font-mono text-blue-500 uppercase">
                             <span className="font-bold flex items-center gap-1">
-                              {isBuyer ? (
-                                <>
-                                  <MaterialIcon name="school" size={13} className="text-blue-500" />
-                                  <span>{activeBuyer.name} Agent (DeepSeek-R1)</span>
-                                </>
-                              ) : (
-                                <>
-                                  <MaterialIcon name="domain" size={13} className="text-purple-500" />
-                                  <span>{negotiationActive.businessName} Agent (Qwen 2.5)</span>
-                                </>
-                              )}
+                              <MaterialIcon name="school" size={13} className="text-blue-500" />
+                              <span>{activeBuyer.name} Agent (DeepSeek-R1)</span>
                             </span>
-                            <span>• Round {msg.round}</span>
+                            <span>• Formulating Proposal</span>
+                          </div>
+                          <div className="rounded-2xl rounded-tl-sm p-3.5 bg-blue-50/80 dark:bg-[#111A33] border border-blue-200 dark:border-blue-500/30 text-blue-900 dark:text-blue-200 shadow-xs flex items-center gap-2.5">
+                            <div className="flex gap-1">
+                              <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.3s]" />
+                              <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce [animation-delay:-0.15s]" />
+                              <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" />
+                            </div>
+                            <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                              Formulating procurement proposal within ₹{targetBudget.toLocaleString()} budget...
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {typingAgent === "supplier" && (
+                        <div className="flex flex-col items-end gap-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                          <div className="flex items-center gap-1.5 px-2 text-[10px] font-mono text-purple-500 uppercase">
+                            <span className="font-bold flex items-center gap-1">
+                              <MaterialIcon name="domain" size={13} className="text-purple-500" />
+                              <span>{negotiationActive.businessName} Agent (Qwen 2.5)</span>
+                            </span>
+                            <span>• Analyzing Terms</span>
+                          </div>
+                          <div className="rounded-2xl rounded-tr-sm p-3.5 bg-purple-50/80 dark:bg-[#1A1430] border border-purple-200 dark:border-purple-500/30 text-purple-900 dark:text-purple-200 shadow-xs flex items-center gap-2.5">
+                            <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                              Evaluating floor price ₹{negotiationActive.floorPrice.toLocaleString()} via FalkorDB graph...
+                            </span>
+                            <div className="flex gap-1">
+                              <span className="h-2 w-2 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.3s]" />
+                              <span className="h-2 w-2 rounded-full bg-purple-500 animate-bounce [animation-delay:-0.15s]" />
+                              <span className="h-2 w-2 rounded-full bg-purple-500 animate-bounce" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Celebratory Completion Card */}
+                      {negotiationSubmitted && (
+                        <div className="rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-b from-emerald-50/90 to-emerald-100/40 dark:from-emerald-950/40 dark:to-[#0A1A17] p-5 shadow-lg animate-in zoom-in-95 duration-200 my-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-bold text-sm sm:text-base">
+                                <CheckCircle2 className="h-5 w-5" />
+                                <span>Consensus Reached & Quotation Generated</span>
+                              </div>
+                              <p className="text-xs text-slate-600 dark:text-gray-300 mt-1">
+                                Both AI agents have successfully negotiated final terms. Quotation queued for human supplier confirmation.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setNegotiationActive(null);
+                                  setActiveTab("my_requests");
+                                }}
+                                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                              >
+                                <span>View in My RFQs</span>
+                                <ArrowRight className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
 
-                          <div
-                            className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm transition-all ${
-                              isBuyer
-                                ? "bg-blue-50 dark:bg-[#111A33] border border-blue-200 dark:border-blue-500/30 text-slate-900 dark:text-blue-100 rounded-tl-sm"
-                                : "bg-purple-50 dark:bg-[#1A1430] border border-purple-200 dark:border-purple-500/30 text-slate-900 dark:text-purple-100 rounded-tr-sm"
-                            }`}
-                          >
-                            <p className="text-[13px] leading-relaxed">{cleanHumanChatText(msg.text)}</p>
-
-                            <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-white/10 flex items-center justify-between text-[11px] font-mono">
-                              <span className="opacity-75">
-                                {isBuyer ? "Bid Proposed:" : "Counter-Offer:"}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-3 border-t border-emerald-300/40 dark:border-emerald-500/20 text-xs">
+                            <div className="bg-white/80 dark:bg-black/30 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono block">FINAL UNIT PRICE</span>
+                              <span className="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-300">
+                                ₹{currentAgreedPrice.toLocaleString()} / unit
                               </span>
-                              <span className={`font-bold px-2 py-0.5 rounded ${
-                                isBuyer 
-                                  ? "bg-blue-600/10 text-blue-700 dark:text-blue-300"
-                                  : "bg-purple-600/10 text-purple-700 dark:text-purple-300"
-                              }`}>
-                                ₹{msg.price.toLocaleString()} / unit
+                            </div>
+                            <div className="bg-white/80 dark:bg-black/30 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono block">TOTAL CONTRACT</span>
+                              <span className="text-sm font-bold font-mono text-slate-900 dark:text-white">
+                                ₹{totalContractValue.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="bg-white/80 dark:bg-black/30 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono block">SAVINGS VS CATALOG</span>
+                              <span className="text-sm font-bold font-mono text-blue-600 dark:text-blue-400">
+                                ₹{totalSavings.toLocaleString()} ({savingsPercent}%)
+                              </span>
+                            </div>
+                            <div className="bg-white/80 dark:bg-black/30 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                              <span className="text-[10px] text-slate-500 dark:text-gray-400 font-mono block">FULFILLMENT DISPATCH</span>
+                              <span className="text-sm font-bold font-mono text-slate-800 dark:text-gray-200">
+                                {negotiationActive.leadDays} Days
                               </span>
                             </div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                      )}
 
-              {/* 2. DETAILED VIEW & SPECS */}
-              {negotiationViewTab === "detailed" && (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-slate-50/50 dark:bg-[#0E1528] p-6 space-y-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
-                          PRODUCT & CONTRACT SPECIFICATION
-                        </span>
-                        <h4 className="text-base font-bold text-slate-900 dark:text-white">
-                          {negotiationActive.name}
-                        </h4>
-                        <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
-                          Supplier: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.businessName}</strong> • Delivery: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.leadDays} Days</strong>
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
-                          BATCH VALUE
-                        </span>
-                        <span className="text-xl font-mono font-extrabold text-slate-900 dark:text-white">
-                          ₹{(negotiationTranscript[negotiationTranscript.length - 1]?.price * targetQuantity || targetBudget).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200 dark:border-gray-800 text-xs">
-                      <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-white dark:bg-[#12192F]">
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">MATERIAL SPECIFICATION:</span>
-                        <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">Commercial Grade Birch & Tubular Steel</span>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-white dark:bg-[#12192F]">
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">STANDARDS:</span>
-                        <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">BIFMA X5.1 / EN 1729 Compliant</span>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-white dark:bg-[#12192F]">
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">PAYMENT METHOD:</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">PayPal Direct Settlement</span>
-                      </div>
-
-                      <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-white dark:bg-[#12192F]">
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">FLOOR PROTECTION:</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">Server-Enforced (₹{negotiationActive.floorPrice.toLocaleString()})</span>
-                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* 3. PROTOCOL LOG */}
-              {negotiationViewTab === "protocol" && (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-950/20 p-3.5 text-xs text-blue-900 dark:text-blue-300">
-                    <strong>Protocol Notice:</strong> Negotiation uses dynamic convergence — agents negotiate until a deal is reached or price gap falls below 2%. Ollama models DeepSeek-R1 (14B) & Qwen 2.5 (14B) run multi-turn bargaining with server-enforced price floors.
+                {/* TAB 2: SPECIFICATIONS & TERMS */}
+                {negotiationViewTab === "detailed" && (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 dark:border-[#1E2638] bg-white dark:bg-[#0E1528] p-6 space-y-4 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div>
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
+                            PRODUCT & CONTRACT SPECIFICATION
+                          </span>
+                          <h4 className="text-lg font-bold text-slate-900 dark:text-white">
+                            {negotiationActive.name}
+                          </h4>
+                          <p className="text-xs text-slate-500 dark:text-gray-400 mt-1">
+                            Category: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.category}</strong> • SKU: <span className="font-mono">{negotiationActive.sku}</span>
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">
+                            Supplier: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.businessName}</strong> • Lead Time: <strong className="text-slate-800 dark:text-gray-200">{negotiationActive.leadDays} Business Days</strong>
+                          </p>
+                        </div>
+
+                        <div className="sm:text-right">
+                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 dark:text-gray-400 block mb-1">
+                            TOTAL BATCH VALUE ({targetQuantity} UNITS)
+                          </span>
+                          <span className="text-2xl font-mono font-extrabold text-slate-900 dark:text-white">
+                            ₹{totalContractValue.toLocaleString()}
+                          </span>
+                          <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 block mt-0.5">
+                            @ ₹{currentAgreedPrice.toLocaleString()} / unit
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Dynamic Specifications Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-4 border-t border-slate-200 dark:border-gray-800 text-xs">
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">CATALOG BASE PRICE:</span>
+                          <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">₹{negotiationActive.basePrice.toLocaleString()} / unit</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">FLOOR PROTECTION:</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">Server-Enforced (₹{negotiationActive.floorPrice.toLocaleString()})</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">STOCK AVAILABILITY:</span>
+                          <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">{negotiationActive.inStock.toLocaleString()} Units Ready</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">SUPPLIER FULFILLMENT RATE:</span>
+                          <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">{negotiationActive.onTimeRate}% On-Time Record</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">ESCROW & PAYMENT:</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">PayPal Sandbox Automated Vault</span>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono">DISPATCH COMMITMENT:</span>
+                          <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block">{negotiationActive.leadDays} Days Guaranteed</span>
+                        </div>
+
+                        {/* Dynamic Product Specifications from Database */}
+                        {negotiationActive.specifications && Object.entries(negotiationActive.specifications).map(([key, val]) => (
+                          <div key={key} className="rounded-xl border border-slate-200 dark:border-gray-800 p-3 bg-slate-50/70 dark:bg-[#12192F]">
+                            <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 block font-mono uppercase">{key}:</span>
+                            <span className="font-semibold text-slate-800 dark:text-gray-200 mt-0.5 block truncate">{String(val)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                )}
 
-                  {negotiationTranscript.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`rounded-xl border p-4 text-xs leading-relaxed shadow-2xs ${
-                        msg.sender === "buyer_agent"
-                          ? "border-blue-200 dark:border-blue-500/30 bg-blue-50/80 dark:bg-blue-950/20 text-blue-950 dark:text-blue-200"
-                          : msg.sender === "supplier_agent"
-                          ? "border-purple-200 dark:border-purple-500/30 bg-purple-50/80 dark:bg-purple-950/20 text-purple-950 dark:text-purple-200"
-                          : "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-300"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5 font-mono text-[10px] uppercase">
-                        <span className="font-bold">
-                          {msg.sender === "buyer_agent"
-                            ? "Buyer AI Agent"
+                {/* TAB 3: PROTOCOL & REASONING */}
+                {negotiationViewTab === "protocol" && (
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-blue-200 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-950/20 p-4 text-xs text-blue-900 dark:text-blue-300 space-y-2">
+                      <div className="font-bold flex items-center gap-1.5 text-sm">
+                        <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <span>Autonomous Multi-Agent Deliberation Architecture</span>
+                      </div>
+                      <p className="leading-relaxed">
+                        The Buyer AI Agent (<strong>DeepSeek-R1:14B</strong>) parses the buyer's procurement constraints (budget, batch size, target deadline) and autonomously proposes opening bids. The Supplier AI Agent (<strong>Qwen 2.5:14B</strong>) evaluates incoming bids against catalog pricing, volume economics, and past transaction graphs stored in <strong>FalkorDB</strong>.
+                      </p>
+                      <p className="text-[11px] text-blue-700/80 dark:text-blue-400/80 font-mono">
+                        Server-enforced floor protection prevents suppliers from selling below viable profit margins, guaranteeing zero unprofitable transactions.
+                      </p>
+                    </div>
+
+                    {negotiationTranscript.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`rounded-xl border p-4 text-xs leading-relaxed shadow-2xs ${
+                          msg.sender === "buyer_agent"
+                            ? "border-blue-200 dark:border-blue-500/30 bg-blue-50/80 dark:bg-blue-950/20 text-blue-950 dark:text-blue-200"
                             : msg.sender === "supplier_agent"
-                            ? `${negotiationActive.businessName} Agent`
-                            : "Deterministic Policy Guardrail"}
-                        </span>
-                        <span className="font-semibold">Round {msg.round} • Quote: ₹{msg.price.toLocaleString()}</span>
+                            ? "border-purple-200 dark:border-purple-500/30 bg-purple-50/80 dark:bg-purple-950/20 text-purple-950 dark:text-purple-200"
+                            : "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/80 dark:bg-emerald-950/20 text-emerald-950 dark:text-emerald-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5 font-mono text-[10px] uppercase">
+                          <span className="font-bold">
+                            {msg.sender === "buyer_agent"
+                              ? "Buyer AI Agent (DeepSeek-R1)"
+                              : msg.sender === "supplier_agent"
+                              ? `${negotiationActive.businessName} Agent (Qwen 2.5)`
+                              : "Deterministic Guardrail"}
+                          </span>
+                          <span className="font-semibold">Round {msg.round} • Quote: ₹{msg.price.toLocaleString()}</span>
+                        </div>
+                        <p>{msg.text}</p>
                       </div>
-                      <p>{msg.text}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
 
-            </div>
-          </div>
-
-          {/* Full Screen Bottom Footer Controls */}
-          <div className="border-t border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 shadow-xs">
-            <div className="text-xs sm:text-sm text-slate-600 dark:text-gray-400 flex items-center gap-2">
-              <span>Current Agreed Total:</span>
-              <span className="font-mono font-bold text-slate-900 dark:text-white text-sm sm:text-base">
-                ₹{negotiationTranscript[negotiationTranscript.length - 1]?.price.toLocaleString() || "..."}
-              </span>
-              {negotiationActive && (
-                <span className="text-[11px] font-mono text-slate-400 dark:text-gray-500">
-                  (Floor: ₹{negotiationActive.floorPrice.toLocaleString()} / unit)
-                </span>
-              )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              {!negotiationSubmitted ? (
-                <button
-                  onClick={handleSendCounteroffer}
-                  disabled={isNegotiating}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <span>Transmit Round {negotiationRound + 1} Counteroffer</span>
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              ) : (
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4" /> Queued in {negotiationActive.businessName} Hub
+            {/* Pinned Bottom Footer Controls */}
+            <div className="border-t border-slate-200 dark:border-[#1B2335] bg-white dark:bg-[#0A0F1E] px-6 sm:px-8 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 shadow-xs">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-xs sm:text-sm text-slate-600 dark:text-gray-400">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Agreed Unit Price:</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white text-sm sm:text-base">
+                    ₹{currentAgreedPrice.toLocaleString()} / unit
                   </span>
-                  <button
-                    onClick={() => {
-                      setNegotiationActive(null);
-                      setActiveTab("my_requests");
-                    }}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm"
-                  >
-                    View in My RFQs
-                  </button>
                 </div>
-              )}
-            </div>
-          </div>
 
-        </div>
-      )}
+                <div className="hidden sm:flex items-center gap-1.5 border-l border-slate-200 dark:border-gray-800 pl-4">
+                  <span className="text-slate-500">Total Contract ({targetQuantity} units):</span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    ₹{totalContractValue.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="hidden md:flex items-center gap-1.5 border-l border-slate-200 dark:border-gray-800 pl-4 text-emerald-600 dark:text-emerald-400 font-mono text-xs">
+                  <span>Savings:</span>
+                  <span className="font-bold">
+                    ₹{totalSavings.toLocaleString()} ({savingsPercent}%)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {isNegotiating ? (
+                  <div className="flex items-center gap-2 text-xs font-mono text-blue-600 dark:text-blue-400">
+                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping" />
+                    <span>Autonomous Agents Deliberating...</span>
+                  </div>
+                ) : !negotiationSubmitted ? (
+                  <button
+                    onClick={handleSendCounteroffer}
+                    className="flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-5 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-md transition-all cursor-pointer"
+                  >
+                    <span>Transmit Round {negotiationRound + 1} Counteroffer</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4" /> Queued in {negotiationActive.businessName} Hub
+                    </span>
+                    <button
+                      onClick={() => {
+                        setNegotiationActive(null);
+                        setActiveTab("my_requests");
+                      }}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-sm"
+                    >
+                      View in My RFQs
+                    </button>
+                    <button
+                      onClick={() => setNegotiationActive(null)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-gray-700 bg-white dark:bg-[#12192B] hover:bg-slate-50 dark:hover:bg-[#1A233C] text-slate-700 dark:text-gray-300 text-xs sm:text-sm font-semibold transition-all cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
 
       {/* Historical Quote / Order Detailed & Live Chat Inspection Modal */}
       <NegotiationDetailModal

@@ -40,8 +40,9 @@ interface AuthContextType {
   switchBuyer: (buyerName: string) => void;
   availableBuyers: ActiveBuyerProfile[];
 
-  // Auth Operations
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  // Auth Operations (email + password)
+  signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   loginDemoPersona: (role: UserRole, idOrName: string) => void;
 }
@@ -97,10 +98,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         availableSellersRef.current = mapped;
 
         // Priority selection:
-        // 1. Matched seller by authenticated user email (e.g. 22et0003@gmail.com -> Varun Furni)
+        // 1. Matched seller by authenticated user email
         // 2. Saved seller in localStorage
-        // 3. Varun Furni (22et0003@gmail.com) as preferred default
-        // 4. First seller in list
+        // 3. First seller in list
         const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
         const currentEmail = session?.user?.email?.toLowerCase();
         
@@ -113,9 +113,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (savedSellerId) {
             found = mapped.find((s) => s.id === savedSellerId);
           }
-        }
-        if (!found) {
-          found = mapped.find((s) => s.name.toLowerCase() === "varun furni" || s.email?.toLowerCase() === "22et0003@gmail.com");
         }
         if (!found) {
           found = mapped[0];
@@ -139,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Listen to Supabase Auth State Changes (Google OAuth redirects)
+  // Listen to Supabase Auth State Changes
   useEffect(() => {
     let mounted = true;
 
@@ -150,18 +147,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(initialSession);
           setUser(initialSession?.user ?? null);
           if (initialSession?.user) {
-            // If user logged in with Google, update buyer profile with their real name & email
             const meta = initialSession.user.user_metadata;
             if (meta?.full_name || initialSession.user.email) {
               setActiveBuyer({
                 id: initialSession.user.id,
                 name: meta.full_name || initialSession.user.email?.split("@")[0] || "Authenticated Buyer",
                 email: initialSession.user.email || "buyer@domain.com",
-                organization: "Google Verified Enterprise",
+                organization: "Verified Enterprise",
               });
             }
 
-            // If user email matches a seller tenant (e.g. 22et0003@gmail.com), auto-activate that seller
+            // If user email matches a seller tenant, auto-activate that seller
             const userEmail = initialSession.user.email?.toLowerCase();
             const pool = availableSellersRef.current;
             if (userEmail && pool.length > 0) {
@@ -192,7 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: currentSession.user.id,
           name: meta?.full_name || currentSession.user.email?.split("@")[0] || "Authenticated Buyer",
           email: currentSession.user.email || "buyer@domain.com",
-          organization: "Google Verified Enterprise",
+          organization: "Verified Enterprise",
         });
 
         const userEmail = currentSession.user.email?.toLowerCase();
@@ -234,21 +230,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signInWithGoogle = async (): Promise<{ error: Error | null }> => {
+  const signUpWithEmail = async (email: string, password: string, fullName: string): Promise<{ error: Error | null }> => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
         options: {
-          redirectTo: window.location.origin,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-          },
+          data: { full_name: fullName },
         },
       });
       return { error: error ? new Error(error.message) : null };
     } catch (err: any) {
-      return { error: err instanceof Error ? err : new Error("Failed to initiate Google OAuth") };
+      return { error: err instanceof Error ? err : new Error("Failed to create account") };
+    }
+  };
+
+  const signInWithEmail = async (email: string, password: string): Promise<{ error: Error | null }> => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      return { error: error ? new Error(error.message) : null };
+    } catch (err: any) {
+      return { error: err instanceof Error ? err : new Error("Failed to sign in") };
     }
   };
 
@@ -290,7 +292,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeBuyer,
         switchBuyer,
         availableBuyers: DEFAULT_BUYERS,
-        signInWithGoogle,
+        signUpWithEmail,
+        signInWithEmail,
         signOut,
         loginDemoPersona,
       }}

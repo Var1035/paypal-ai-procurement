@@ -70,7 +70,7 @@ export const Navbar: React.FC = () => {
           );
         })}
 
-        {/* Auth Role / Google Login Controls */}
+        {/* Auth Role / Account Controls */}
         <div className={`h-4 w-[1px] ${isDark ? "bg-white/15" : "bg-slate-300"}`} />
         <AuthNavControls />
 

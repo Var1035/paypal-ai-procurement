@@ -7,7 +7,13 @@ import {
   ChevronDown, 
   LogOut, 
   Check, 
-  AlertCircle
+  AlertCircle,
+  Mail,
+  Lock,
+  User,
+  ArrowRight,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export const AuthNavControls: React.FC = () => {
@@ -21,15 +27,24 @@ export const AuthNavControls: React.FC = () => {
     activeBuyer, 
     switchBuyer, 
     availableBuyers,
-    signInWithGoogle, 
+    signInWithEmail,
+    signUpWithEmail,
     signOut
   } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
   const [isOpen, setIsOpen] = useState(false);
-  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Form fields
+  const [emailField, setEmailField] = useState("");
+  const [passwordField, setPasswordField] = useState("");
+  const [nameField, setNameField] = useState("");
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -42,11 +57,42 @@ export const AuthNavControls: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleGoogleLogin = async () => {
-    setGoogleError(null);
-    const { error } = await signInWithGoogle();
-    if (error) {
-      setGoogleError(error.message || "Google OAuth requires client ID in Supabase console. You can also use instant demo accounts below.");
+  const handleSubmitAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      if (authMode === "signup") {
+        if (!nameField.trim()) {
+          setAuthError("Please enter your full name.");
+          setAuthLoading(false);
+          return;
+        }
+        const { error } = await signUpWithEmail(emailField, passwordField, nameField);
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setAuthError(null);
+          // Supabase may require email confirmation; show success
+          setAuthMode("signin");
+          setPasswordField("");
+        }
+      } else {
+        const { error } = await signInWithEmail(emailField, passwordField);
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setIsOpen(false);
+          setEmailField("");
+          setPasswordField("");
+          setNameField("");
+        }
+      }
+    } catch {
+      setAuthError("Something went wrong. Please try again.");
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -100,12 +146,12 @@ export const AuthNavControls: React.FC = () => {
                 Active Authentication
               </span>
               <span className="text-xs font-bold truncate block">
-                {user?.email || (user?.user_metadata?.full_name ? `${user.user_metadata.full_name}` : "Demo Guest Session")}
+                {user?.email || (user?.user_metadata?.full_name ? `${user.user_metadata.full_name}` : "Guest Session")}
               </span>
             </div>
             {user && (
               <span className="rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 text-[9px] font-mono font-semibold">
-                Google Verified
+                Verified
               </span>
             )}
           </div>
@@ -217,44 +263,112 @@ export const AuthNavControls: React.FC = () => {
             </div>
           )}
 
-          {/* Google OAuth Error Banner */}
-          {googleError && (
-            <div className="mb-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 p-2.5 text-[11px] text-amber-800 dark:text-amber-300">
+          {/* Auth Error Banner */}
+          {authError && (
+            <div className="mb-3 rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-950/30 p-2.5 text-[11px] text-rose-800 dark:text-rose-300">
               <div className="flex items-start gap-1.5">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <span>{googleError}</span>
+                <span>{authError}</span>
               </div>
             </div>
           )}
 
-          {/* Google Sign-in / Sign-out Action Bar */}
-          <div className="pt-3 border-t border-slate-100 dark:border-gray-800 flex items-center justify-between gap-2">
+          {/* Sign In / Sign Up / Sign Out */}
+          <div className="pt-3 border-t border-slate-100 dark:border-gray-800">
             {!user ? (
-              <button
-                onClick={handleGoogleLogin}
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-gray-700 bg-white hover:bg-slate-50 dark:bg-[#12192B] dark:hover:bg-[#1A233C] py-2 px-3 text-xs font-semibold transition-all cursor-pointer"
-              >
-                {/* Google G Logo SVG */}
-                <svg className="h-4 w-4" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              <form onSubmit={handleSubmitAuth} className="space-y-2.5">
+                {/* Mode Tabs */}
+                <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-gray-800 text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode("signin"); setAuthError(null); }}
+                    className={`flex-1 py-1.5 text-center transition-colors cursor-pointer ${
+                      authMode === "signin"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-50 dark:bg-[#12192B] text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode("signup"); setAuthError(null); }}
+                    className={`flex-1 py-1.5 text-center transition-colors cursor-pointer ${
+                      authMode === "signup"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-50 dark:bg-[#12192B] text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+
+                {/* Name field (signup only) */}
+                {authMode === "signup" && (
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Full name"
+                      value={nameField}
+                      onChange={(e) => setNameField(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-[#12192B] text-xs text-slate-900 dark:text-gray-100 placeholder:text-slate-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Email */}
+                <div className="relative">
+                  <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={emailField}
+                    onChange={(e) => setEmailField(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-[#12192B] text-xs text-slate-900 dark:text-gray-100 placeholder:text-slate-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                    required
                   />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                </div>
+
+                {/* Password */}
+                <div className="relative">
+                  <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Password"
+                    value={passwordField}
+                    onChange={(e) => setPasswordField(e.target.value)}
+                    className="w-full pl-8 pr-9 py-2 rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-[#12192B] text-xs text-slate-900 dark:text-gray-100 placeholder:text-slate-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all"
+                    required
+                    minLength={6}
                   />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Sign in with Google</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-gray-300 cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 py-2 px-3 text-xs font-semibold text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  {authLoading ? (
+                    <span className="animate-pulse">Processing...</span>
+                  ) : (
+                    <>
+                      <span>{authMode === "signin" ? "Sign In" : "Create Account"}</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </button>
+              </form>
             ) : (
               <button
                 onClick={() => {
