@@ -22,7 +22,7 @@ export interface IntakeAnalysisInput {
 }
 
 export interface IntakeAnalysisOutput {
-  type: "clarification" | "analysis" | "ready_to_negotiate";
+  type: "clarification" | "analysis" | "ready_to_negotiate" | "not_found";
   message: string;
   structuredAnalysis?: {
     matchCount: number;
@@ -164,6 +164,11 @@ async function callOllama(model: string, systemPrompt: string, userPrompt: strin
  * clarifying questions or return a structured sourcing analysis.
  */
 export async function generateIntakeAnalysis(input: IntakeAnalysisInput): Promise<IntakeAnalysisOutput> {
+  // If the user asked for a product that has 0 catalog matches, return polite not_found response immediately
+  if (input.extractedFields.productKeywords && input.extractedFields.productKeywords.length > 0 && input.catalogMatches.length === 0) {
+    return buildFallbackIntakeResponse(input);
+  }
+
   const model = env.BUYER_AGENT_MODEL || "deepseek-r1:14b";
 
   const systemPrompt = `You are an intelligent procurement assistant for a B2B marketplace platform. Your role is to help buyers find the right products from verified suppliers.
@@ -255,6 +260,24 @@ Based on the above, respond appropriately. If critical information is missing, a
 }
 
 function buildFallbackIntakeResponse(input: IntakeAnalysisInput): IntakeAnalysisOutput {
+  // If product keywords were detected but 0 catalog matches exist, return polite not_found response
+  if (input.extractedFields.productKeywords && input.extractedFields.productKeywords.length > 0 && input.catalogMatches.length === 0) {
+    const term = input.extractedFields.productKeywords[0];
+    const displayTerm = term ? `"${term}"` : "the requested product";
+    return {
+      type: "not_found",
+      message: `Sorry! The product doesn't exist in our database.\n\nWe currently do not have ${displayTerm} in our verified B2B supplier catalog. Our platform specializes in commercial, institutional, and office workspace furniture.\n\nHere are product categories available in our catalog:\n• **Educational & School Furniture**: School Desks, Kids Study Desks, Study Tables, Classroom Chairs\n• **Office Desks & Workstations**: Executive Desks, Office Desks, Workstation Desks, Aluminium Desks\n• **Ergonomic & Commercial Seating**: Folding Chairs, Visitor Chairs, Static Chairs, Wheel Chairs, Lab Stools\n• **Lounge & Reception Seating**: L-Shaped Sofas, Recliner Sofas\n• **Storage & Filing Systems**: Heavy-duty Steel Almirahs, Storage Cabinets\n\nWould you like to explore any of these verified alternatives?`,
+      structuredAnalysis: undefined,
+      suggestedQuestions: [
+        "Show School Desks & Tables",
+        "Show Office & Ergonomic Chairs",
+        "Show Workstation Desks",
+        "Show Storage Cabinets & Almirahs",
+        "Show Lounge & Reception Sofas",
+      ],
+    };
+  }
+
   // If ALL fields are captured (or 0 missing)
   if (input.missingFields.length === 0) {
     if (input.catalogMatches.length > 0) {
@@ -288,7 +311,7 @@ function buildFallbackIntakeResponse(input: IntakeAnalysisInput): IntakeAnalysis
     if (missing === "delivery_timeline") question = "When do you need delivery? (e.g., within 7, 10, or 14 days)";
     if (missing === "specific_product_type") question = "What specific type of product or material are you looking for?";
 
-    const matchesPreview = input.catalogMatches.length > 0
+    const matchesPreview = input.catalogMatches.length > 0 && input.extractedFields.productKeywords.length > 0
       ? `\n\nI found ${input.catalogMatches.length} matching verified products in our catalog (such as ${input.catalogMatches[0].name} by ${input.catalogMatches[0].supplier} at ₹${input.catalogMatches[0].basePrice.toLocaleString()}/unit).`
       : "";
 
@@ -307,7 +330,7 @@ function buildFallbackIntakeResponse(input: IntakeAnalysisInput): IntakeAnalysis
     if (input.missingFields.includes("delivery_timeline")) questions.push("When do you need delivery? (e.g., within 7 days)");
     if (input.missingFields.includes("specific_product_type")) questions.push("Can you specify the exact product type?");
 
-    const matchesPrefix = input.catalogMatches.length > 0
+    const matchesPrefix = input.catalogMatches.length > 0 && input.extractedFields.productKeywords.length > 0
       ? `I found ${input.catalogMatches.length} candidate products in our verified catalog. `
       : "";
 

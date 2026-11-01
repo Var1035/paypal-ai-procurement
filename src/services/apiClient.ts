@@ -227,7 +227,7 @@ class ApiClient {
   }): Promise<{
     success: boolean;
     response: string;
-    type: "clarification" | "analysis" | "ready_to_negotiate";
+    type: "clarification" | "analysis" | "ready_to_negotiate" | "not_found";
     extractedFields: {
       quantity: number | null;
       budget: number | null;

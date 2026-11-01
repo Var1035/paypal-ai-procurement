@@ -135,7 +135,9 @@ function accumulateParameters(
   if (currentExtracted.budget != null) budget = currentExtracted.budget;
   if (currentExtracted.deliveryDays != null) deliveryDays = currentExtracted.deliveryDays;
   if (currentExtracted.productKeywords && currentExtracted.productKeywords.length > 0) {
-    productKeywords = Array.from(new Set([...productKeywords, ...currentExtracted.productKeywords]));
+    // If the latest message introduces a specific product query, override previous keywords
+    // so stale product searches do not pollute new inquiries
+    productKeywords = currentExtracted.productKeywords;
   }
 
   return {
@@ -195,17 +197,39 @@ aiRouter.post("/chat", async (req: Request, res: Response, next: NextFunction) =
 
         // Filter by keyword relevance
         if (productKeywords.length > 0) {
-          matchingProducts = products.filter((p: any) => {
-            const searchable = `${p.name} ${p.category} ${p.material || ""} ${p.sku} ${p.businesses?.name || ""}`.toLowerCase();
-            return productKeywords.some((kw) => searchable.includes(kw));
-          });
-        }
-
-        // If no keyword match found, return all products as potential matches
-        if (matchingProducts.length === 0) {
-          matchingProducts = products;
+          matchingProducts = products.filter((p: any) => matchesProduct(p, productKeywords));
         }
       }
+    }
+
+    // -------------------------------------------------------------------
+    // Step 2b: Handle out-of-catalog product inquiry immediately
+    // If the buyer asked for an item that is not in the database (e.g. beds,
+    // laptops, footwear), apologize explicitly and recommend verified catalog items.
+    // -------------------------------------------------------------------
+    const isProductNotFound = productKeywords.length > 0 && matchingProducts.length === 0;
+
+    if (isProductNotFound) {
+      const primaryTerm = productKeywords[0];
+      const notFoundResponse = buildProductNotFoundResponse(primaryTerm, allProducts);
+
+      return res.status(200).json({
+        success: true,
+        response: notFoundResponse.message,
+        type: "not_found",
+        extractedFields: {
+          quantity,
+          budget,
+          deliveryDays,
+          productKeywords,
+        },
+        missingFields: ["product_not_in_catalog"],
+        catalogMatches: [],
+        matchCount: 0,
+        totalCatalogProducts: allProducts.length,
+        structuredAnalysis: null,
+        suggestedQuestions: notFoundResponse.suggestedQuestions,
+      });
     }
 
     // -------------------------------------------------------------------
@@ -295,10 +319,81 @@ aiRouter.post("/chat", async (req: Request, res: Response, next: NextFunction) =
 });
 
 /**
- * Extracts meaningful product-related keywords from user input
- * Normalizes multi-word variants (e.g. "class room" -> "classroom")
+ * Checks whether a catalog product matches any of the extracted search keywords/terms
  */
-function extractProductKeywords(message: string): string[] {
+export function matchesProduct(product: any, terms: string[]): boolean {
+  const searchable = `${product.name} ${product.category} ${product.material || ""} ${product.sku} ${product.businesses?.name || ""}`.toLowerCase();
+  
+  return terms.some((term) => {
+    const t = term.toLowerCase().trim();
+    if (!t) return false;
+
+    // Direct substring match
+    if (searchable.includes(t)) return true;
+
+    // Singular form of plural term (e.g. "desks" -> "desk", "beds" -> "bed")
+    if (t.endsWith("s") && searchable.includes(t.slice(0, -1))) return true;
+    if (t.endsWith("es") && searchable.includes(t.slice(0, -2))) return true;
+
+    // Plural form of singular term (e.g. "chair" -> "chairs")
+    if (searchable.includes(`${t}s`) || searchable.includes(`${t}es`)) return true;
+
+    // Multi-word matching (e.g. "school desks" matches if both "school" and "desk" exist)
+    const words = t.split(/\s+/).filter((w) => w.length > 2);
+    if (words.length > 1 && words.every((w) => {
+      const root = w.endsWith("s") ? w.slice(0, -1) : w;
+      return searchable.includes(root);
+    })) {
+      return true;
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Builds an explicit, helpful advisory response when the user asks for a product
+ * that does NOT exist in the Supabase catalog (e.g. beds, laptops, footwear).
+ * Clearly states upfront that the product doesn't exist, and recommends existing catalog products.
+ */
+export function buildProductNotFoundResponse(searchedTerm: string, _allProducts?: any[]): IntakeAnalysisOutput {
+  const displayTerm = searchedTerm ? `"${searchedTerm}"` : "the requested product";
+
+  const categoryHighlights = [
+    { name: "Educational & School Furniture", examples: "School Desks, Kids Study Desks, Study Tables, Classroom Chairs" },
+    { name: "Office Desks & Workstations", examples: "Executive Desks, Office Desks, Workstation Desks, Aluminium Desks" },
+    { name: "Ergonomic & Commercial Seating", examples: "Folding Chairs, Visitor Chairs, Static Chairs, Wheel Chairs, Lab Stools" },
+    { name: "Lounge & Reception Seating", examples: "L-Shaped Sofas, Recliner Sofas" },
+    { name: "Storage & Filing Systems", examples: "Heavy-duty Steel Almirahs, Storage Cabinets" },
+  ];
+
+  const recommendationsText = categoryHighlights
+    .map((c) => `• **${c.name}**: ${c.examples}`)
+    .join("\n");
+
+  const message = `Sorry! The product doesn't exist in our database.\n\nWe currently do not have ${displayTerm} in our verified B2B supplier catalog. Our platform specializes in commercial, institutional, and office workspace furniture.\n\nHere are the product categories available in our catalog that you can explore:\n\n${recommendationsText}\n\nWould you like to explore any of these verified alternatives?`;
+
+  return {
+    type: "not_found",
+    message,
+    structuredAnalysis: undefined,
+    suggestedQuestions: [
+      "Show School Desks & Tables",
+      "Show Office & Ergonomic Chairs",
+      "Show Workstation Desks",
+      "Show Storage Cabinets & Almirahs",
+      "Show Lounge & Reception Sofas",
+    ],
+  };
+}
+
+/**
+ * Extracts meaningful product-related keywords from user input
+ * Handles explicit intent patterns ("looking for beds", "need 100 laptops", "do you have chairs"),
+ * common out-of-catalog product queries (e.g., beds, mattress, electronics, clothing),
+ * and standard in-catalog items.
+ */
+export function extractProductKeywords(message: string): string[] {
   const normalized = message
     .toLowerCase()
     .replace(/\bclass\s+rooms?\b/g, "classroom")
@@ -307,19 +402,61 @@ function extractProductKeywords(message: string): string[] {
 
   const keywords: string[] = [];
 
-  const productTypes = [
-    "classroom", "desk", "table", "chair", "furniture", "cabinet", "shelf", "rack",
-    "stool", "bench", "bookcase", "locker", "whiteboard", "board",
-    "workstation", "cubicle", "pod", "seating", "sofa", "lounge",
-    "computer", "laptop", "monitor", "printer", "scanner", "hardware", "server",
-    "pen", "pencil", "notebook", "paper", "stationery",
-    "study", "office", "school", "lab", "library",
-    "wood", "metal", "steel", "plastic", "ergonomic",
+  // 1. Natural language intent patterns:
+  // e.g. "looking for beds for my home", "need 50 laptops", "do you have double cots?", "show me study tables"
+  const intentPatterns = [
+    /(?:looking\s+for|search(?:ing)?\s+for|need(?:ing)?|want(?:ing)?|order(?:ing)?|buy(?:ing)?|procure(?:ment|s)?|interested\s+in|do\s+you\s+have|can\s+i\s+get|where\s+are\s+the|find|show\s+me)\s+(?:a\s+|an\s+|some\s+|any\s+|the\s+)?([a-z0-9\s\-]+?)(?:\s+for\s+(?:my|our|the|a|an)?|\s+in\s+|\s+with\s+|\s+under\s+|\s+within\s+|\s+at\s+|\s+qty|\s+quantity|\.|\?|!|$)/i,
+    /(?:any\s+)([a-z0-9\s\-]+?)(?:\s+available|\s+in\s+stock|\.|\?|!|$)/i,
   ];
 
-  for (const type of productTypes) {
-    if (normalized.includes(type)) {
-      keywords.push(type);
+  for (const pat of intentPatterns) {
+    const match = message.match(pat);
+    if (match && match[1]) {
+      const cleaned = match[1]
+        .replace(/\b\d+\s*(?:units?|pcs|pieces?|items?|nos?\.?)?\b/gi, "")
+        .replace(/\b(?:good|best|cheap|affordable|urgent|high\s+quality|quality)\b/gi, "")
+        .trim();
+      if (cleaned.length > 1 && !keywords.includes(cleaned)) {
+        keywords.push(cleaned);
+      }
+    }
+  }
+
+  // 2. Comprehensive vocabulary bank of catalog products + out-of-catalog inquiries
+  const productWordBank = [
+    // Out-of-catalog common queries (home, electronics, apparel, etc.)
+    "bed", "beds", "cot", "cots", "mattress", "mattresses", "bunk bed", "bunk beds", "pillow", "blanket",
+    "laptop", "laptops", "computer", "computers", "mobile", "phone", "phones", "smartphone", "smartphones",
+    "shoe", "shoes", "clothing", "clothes", "shirt", "shirts", "pant", "pants", "uniform", "uniforms",
+    "tv", "television", "fridge", "refrigerator", "cooler", "ac", "air conditioner", "kitchen", "utensil",
+
+    // In-catalog furniture items
+    "desk", "desks", "chair", "chairs", "table", "tables", "stool", "stools",
+    "bench", "benches", "sofa", "sofas", "couch", "couches", "almirah", "almirahs",
+    "cabinet", "cabinets", "cupboard", "cupboards", "shelf", "shelves", "rack", "racks",
+    "workstation", "workstations", "cubicle", "cubicles", "wheelchair", "wheelchairs",
+    "whiteboard", "whiteboards", "board", "boards", "seating", "furniture",
+    "classroom", "study", "office", "school", "lab", "library", "executive",
+    "ergonomic", "folding", "visitor", "static", "recline", "recliner"
+  ];
+
+  for (const word of productWordBank) {
+    const regex = new RegExp(`\\b${word}\\b`, "i");
+    if (regex.test(normalized) && !keywords.includes(word)) {
+      keywords.push(word);
+    }
+  }
+
+  // 3. If still empty and input is short (1-4 words), treat meaningful nouns as product candidate
+  if (keywords.length === 0) {
+    const words = normalized
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .filter((w) =>
+        !["i", "im", "we", "my", "our", "the", "a", "an", "is", "are", "for", "in", "to", "at", "please", "can", "you", "me", "hi", "hello", "hey", "need", "want"].includes(w)
+      );
+    if (words.length > 0 && words.length <= 4) {
+      keywords.push(words.join(" "));
     }
   }
 
@@ -331,6 +468,11 @@ function extractProductKeywords(message: string): string[] {
  */
 function buildDeterministicResponse(input: IntakeAnalysisInput): IntakeAnalysisOutput {
   const { missingFields, catalogMatches, extractedFields } = input;
+
+  // 0. If product keywords were supplied but 0 catalog matches exist, return polite not_found response
+  if (extractedFields.productKeywords && extractedFields.productKeywords.length > 0 && catalogMatches.length === 0) {
+    return buildProductNotFoundResponse(extractedFields.productKeywords[0]);
+  }
 
   // 1. If ALL fields are captured (or 0 missing)
   if (missingFields.length === 0) {
@@ -365,7 +507,7 @@ function buildDeterministicResponse(input: IntakeAnalysisInput): IntakeAnalysisO
     if (missing === "delivery_timeline") question = "When do you need delivery? (e.g., within 7, 10, or 14 days)";
     if (missing === "specific_product_type") question = "What specific type of product or material are you looking for?";
 
-    const matchesPreview = catalogMatches.length > 0
+    const matchesPreview = catalogMatches.length > 0 && extractedFields.productKeywords.length > 0
       ? `\n\nI found ${catalogMatches.length} matching verified products in our catalog (such as ${catalogMatches[0].name} by ${catalogMatches[0].supplier} at ₹${catalogMatches[0].basePrice.toLocaleString()}/unit).`
       : "";
 
@@ -384,7 +526,7 @@ function buildDeterministicResponse(input: IntakeAnalysisInput): IntakeAnalysisO
     if (missingFields.includes("delivery_timeline")) questions.push("When do you need delivery? (e.g., within 7 days)");
     if (missingFields.includes("specific_product_type")) questions.push("Can you specify the exact product type?");
 
-    const matchesPrefix = catalogMatches.length > 0
+    const matchesPrefix = catalogMatches.length > 0 && extractedFields.productKeywords.length > 0
       ? `I found ${catalogMatches.length} candidate products in our verified catalog. `
       : "";
 

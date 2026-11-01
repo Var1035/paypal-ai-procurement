@@ -148,7 +148,7 @@ const buildAnalysisDetails = (
 };
 
 export interface AIChatResponse {
-  type: "clarification" | "analysis" | "ready_to_negotiate";
+  type: "clarification" | "analysis" | "ready_to_negotiate" | "not_found";
   message: string;
   extractedFields?: {
     quantity: number | null;
@@ -420,7 +420,12 @@ export const AISourcingPage: React.FC = () => {
 
       // Build analysis if we have catalog matches (for the structured cards view)
       let analysis: DetailedAIAnalysis | undefined;
-      if (aiResult.type !== "clarification" && aiResult.catalogMatches && aiResult.catalogMatches.length > 0) {
+      if (
+        aiResult.type !== "clarification" &&
+        aiResult.type !== "not_found" &&
+        aiResult.catalogMatches &&
+        aiResult.catalogMatches.length > 0
+      ) {
         const qty = aiResult.extractedFields?.quantity || targetQuantity;
         const budget = aiResult.extractedFields?.budget || targetBudget;
         const days = aiResult.extractedFields?.deliveryDays || targetDeadline;
@@ -472,12 +477,48 @@ export const AISourcingPage: React.FC = () => {
 
       return aiResult.type === "clarification"
         ? `Agent is gathering more details before providing analysis...`
+        : aiResult.type === "not_found"
+        ? `Product not found in database. Recommended available categories.`
         : `Found ${aiResult.matchCount} matching products from ${aiResult.totalCatalogProducts} in catalog.`;
     } catch (err: any) {
-      // Fallback: if backend is unreachable, use the old static analysis
+      // Fallback: if backend is unreachable, handle gracefully
       console.warn("AI chat API error, falling back to static analysis:", err);
 
       const lower = text.toLowerCase();
+      const isOutOfCatalog = /\b(bed|beds|cot|cots|mattress|mattresses|laptop|laptops|shoe|shoes|clothes|clothing|phone|phones|refrigerator|fridge)\b/i.test(lower);
+
+      if (isOutOfCatalog) {
+        const notFoundMsg = `Sorry! The product doesn't exist in our database.\n\nWe currently do not have this product in our verified B2B supplier catalog. Our marketplace specializes in commercial, educational, and office workspace furniture.\n\nHere are the product categories available in our catalog that you can explore:\n• **Educational & School Furniture**: School Desks, Kids Study Desks, Study Tables, Classroom Chairs\n• **Office Desks & Workstations**: Executive Desks, Office Desks, Workstation Desks, Aluminium Desks\n• **Ergonomic & Commercial Seating**: Folding Chairs, Visitor Chairs, Static Chairs, Wheel Chairs, Lab Stools\n• **Lounge & Reception Seating**: L-Shaped Sofas, Recliner Sofas\n• **Storage & Filing Systems**: Heavy-duty Steel Almirahs, Storage Cabinets\n\nWould you like to explore any of these verified alternatives?`;
+
+        setChatHistory((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMsgId
+              ? {
+                  ...msg,
+                  isLoading: false,
+                  analysis: undefined,
+                  aiResponse: {
+                    type: "not_found",
+                    message: notFoundMsg,
+                    catalogMatches: [],
+                    matchCount: 0,
+                    suggestedQuestions: [
+                      "Show School Desks & Tables",
+                      "Show Office & Ergonomic Chairs",
+                      "Show Workstation Desks",
+                      "Show Storage Cabinets & Almirahs",
+                      "Show Lounge & Reception Sofas",
+                    ],
+                  },
+                }
+              : msg
+          )
+        );
+
+        sendBuyerPrompt(text);
+        return `Product not in catalog. Recommended alternatives.`;
+      }
+
       const qtyMatch = lower.match(/(\d+)\s*(units|desks|chairs|items|tables)/);
       const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : targetQuantity;
       if (qtyMatch) setTargetQuantity(qty);
@@ -899,15 +940,23 @@ export const AISourcingPage: React.FC = () => {
                   /* Full AI Response Bubble — handles both clarification and analysis */
                   <div className="flex items-start gap-3">
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${
-                      msg.aiResponse?.type === "clarification"
+                      msg.aiResponse?.type === "not_found"
+                        ? "bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/40 text-rose-600 dark:text-rose-400"
+                        : msg.aiResponse?.type === "clarification"
                         ? "bg-amber-50 dark:bg-amber-600/20 border border-amber-200 dark:border-amber-500/40 text-amber-600 dark:text-amber-400"
                         : "bg-emerald-50 dark:bg-emerald-600/20 border border-emerald-200 dark:border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
                     }`}>
-                      <Bot className="h-4 w-4" />
+                      {msg.aiResponse?.type === "not_found" ? (
+                        <AlertCircle className="h-4 w-4" />
+                      ) : (
+                        <Bot className="h-4 w-4" />
+                      )}
                     </div>
                     
                     <div className={`flex-1 rounded-2xl rounded-tl-sm bg-white dark:bg-[#0E1528] p-5 space-y-5 shadow-lg ${
-                      msg.aiResponse?.type === "clarification"
+                      msg.aiResponse?.type === "not_found"
+                        ? "border border-rose-200 dark:border-rose-500/30"
+                        : msg.aiResponse?.type === "clarification"
                         ? "border border-amber-200 dark:border-amber-500/30"
                         : "border border-emerald-200 dark:border-emerald-500/30"
                     }`}>
@@ -915,11 +964,15 @@ export const AISourcingPage: React.FC = () => {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-gray-800 pb-3">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-bold font-mono flex items-center gap-1.5 ${
-                            msg.aiResponse?.type === "clarification"
+                            msg.aiResponse?.type === "not_found"
+                              ? "text-rose-600 dark:text-rose-400"
+                              : msg.aiResponse?.type === "clarification"
                               ? "text-amber-600 dark:text-amber-400"
                               : "text-emerald-600 dark:text-emerald-400"
                           }`}>
-                            {msg.aiResponse?.type === "clarification" ? (
+                            {msg.aiResponse?.type === "not_found" ? (
+                              <><AlertCircle className="h-4 w-4" /> PRODUCT NOT FOUND IN DATABASE</>
+                            ) : msg.aiResponse?.type === "clarification" ? (
                               <><MessageSquare className="h-4 w-4" /> AGENT NEEDS MORE DETAILS</>
                             ) : (
                               <><CheckCircle2 className="h-4 w-4" /> AI SOURCING ANALYSIS COMPLETE</>
@@ -930,27 +983,33 @@ export const AISourcingPage: React.FC = () => {
                           </span>
                         </div>
                         <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-medium ${
-                          msg.aiResponse?.type === "clarification"
+                          msg.aiResponse?.type === "not_found"
+                            ? "text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-500/30"
+                            : msg.aiResponse?.type === "clarification"
                             ? "text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-500/30"
                             : "text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-500/30"
                         }`}>
-                          {msg.aiResponse?.type === "clarification" ? "Clarification Needed" : "Supabase Catalog Verified"}
+                          {msg.aiResponse?.type === "not_found" ? "Out of Catalog" : msg.aiResponse?.type === "clarification" ? "Clarification Needed" : "Supabase Catalog Verified"}
                         </span>
                       </div>
 
                       {/* AI Response Message (always shown) */}
                       {msg.aiResponse && (
                         <div className={`rounded-xl p-3.5 ${
-                          msg.aiResponse.type === "clarification"
+                          msg.aiResponse.type === "not_found"
+                            ? "border border-rose-200 dark:border-rose-500/20 bg-rose-50/70 dark:bg-rose-950/20"
+                            : msg.aiResponse.type === "clarification"
                             ? "border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-950/20"
                             : "border border-blue-200 dark:border-blue-500/20 bg-blue-50/70 dark:bg-blue-950/20"
                         }`}>
                           <span className={`text-[11px] font-mono font-semibold block mb-1.5 ${
-                            msg.aiResponse.type === "clarification"
+                            msg.aiResponse.type === "not_found"
+                              ? "text-rose-700 dark:text-rose-400"
+                              : msg.aiResponse.type === "clarification"
                               ? "text-amber-700 dark:text-amber-400"
                               : "text-blue-700 dark:text-blue-400"
                           }`}>
-                            {msg.aiResponse.type === "clarification" ? "AGENT QUESTION" : "SOURCING AGENT RESPONSE"}
+                            {msg.aiResponse.type === "not_found" ? "CATALOG AVAILABILITY NOTICE" : msg.aiResponse.type === "clarification" ? "AGENT QUESTION" : "SOURCING AGENT RESPONSE"}
                           </span>
                           <div className="text-xs sm:text-sm text-slate-800 dark:text-gray-200 leading-relaxed whitespace-pre-line">
                             {cleanHumanChatText(msg.aiResponse.message)}
@@ -971,16 +1030,21 @@ export const AISourcingPage: React.FC = () => {
                                   handleOrbSubmit(q);
                                 }
                               }}
-                              className="text-[11px] px-3 py-1.5 rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors cursor-pointer font-medium"
+                              className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors cursor-pointer font-medium flex items-center gap-1.5 ${
+                                msg.aiResponse?.type === "not_found"
+                                  ? "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                                  : "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                              }`}
                             >
-                              {q}
+                              <MaterialIcon name="explore" size={12} className={msg.aiResponse?.type === "not_found" ? "text-blue-500 dark:text-blue-400" : "text-amber-500 dark:text-amber-400"} />
+                              <span>{q}</span>
                             </button>
                           ))}
                         </div>
                       )}
 
                       {/* Extracted Fields Summary (when available) */}
-                      {msg.aiResponse?.extractedFields && msg.aiResponse.type !== "clarification" && (
+                      {msg.aiResponse?.extractedFields && msg.aiResponse.type !== "clarification" && msg.aiResponse.type !== "not_found" && (
                         <div className="rounded-xl border border-slate-200 dark:border-[#222E4A] bg-slate-50/80 dark:bg-[#111728] p-3.5 space-y-1.5">
                           <span className="text-[11px] font-mono font-semibold text-slate-700 dark:text-gray-300 block">EXTRACTED REQUIREMENTS</span>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
